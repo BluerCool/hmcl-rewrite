@@ -1,0 +1,10 @@
+{
+  "name": "@hmcl/preload",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@hmcl/shared": "workspace:*",
+    "electron": "^38.2.0"
+  }
+}

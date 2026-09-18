@@ -1,0 +1,31 @@
+{
+  "name": "hmcl-rewrite",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TypeScript rewrite of Hello Minecraft! Launcher (Electron + Web frontend)",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/shared && tsc --noEmit -p packages/main && tsc --noEmit -p packages/preload && tsc --noEmit -p packages/renderer",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:smoke": "vitest run --config vitest.smoke.config.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.2",
+    "electron": "^38.2.0",
+    "electron-vite": "^4.0.1",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "typescript": "^5.9.2",
+    "vite": "^7.3.6",
+    "vitest": "^3.2.4"
+  }
+}

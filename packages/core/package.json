@@ -1,0 +1,13 @@
+{
+  "name": "@hmcl/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Framework-free launcher core: version resolution, downloads, launching",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2"
+  }
+}

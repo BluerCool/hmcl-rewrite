@@ -1,0 +1,2800 @@
+/* HMCL blue (Material 3 monet) theme, values from the original blue.css. */
+:root {
+  --monet-primary: #4352a5;
+  --monet-on-primary: #ffffff;
+  --monet-primary-container: #5c6bc0;
+  --monet-on-primary-container: #f8f6ff;
+  --monet-secondary-container: #d0d5fd;
+  --monet-on-secondary-container: #565b7d;
+  --monet-surface: #fbf8ff;
+  --monet-on-surface: #1b1b21;
+  --monet-surface-container-lowest: #ffffff;
+  --monet-surface-container-low: #f5f2fa;
+  --monet-surface-container: #efedf5;
+  --monet-surface-container-high: #e9e7ef;
+  --monet-surface-variant: #e2e1ef;
+  --monet-on-surface-variant: #454651;
+  --monet-outline: #767683;
+  --monet-outline-variant: #c6c5d3;
+  --monet-error: #ba1a1a;
+  --monet-error-container: #ffdad6;
+  --monet-on-error-container: #93000a;
+  --monet-primary-fixed-dim: #bac3ff;
+  --monet-on-primary-fixed: #00105b;
+  --monet-tertiary-fixed-dim: #f6bd58;
+  --monet-on-tertiary-fixed: #281900;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', 'Noto Sans SC', system-ui, sans-serif;
+  font-size: 14px;
+  background: var(--monet-surface);
+  color: var(--monet-on-surface);
+  user-select: none;
+}
+
+.boot-splash {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--monet-on-surface-variant);
+}
+
+/* ============ UI animations (HMCL page fades, sheens & ripples) ============ */
+
+/* Sidebar page switches: fade + gentle rise, re-keyed by the active page. */
+.page-stage {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  animation: page-in 0.22s ease-out;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Press feedback: quick squash on active interactive hosts. */
+.nav-item,
+.text-button,
+.raised-button,
+.menu-button,
+.launch-button,
+.advanced-list-item,
+.java-list li {
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.08s ease;
+}
+
+.nav-item:active:not(:disabled),
+.text-button:active:not(:disabled),
+.raised-button:active:not(:disabled),
+.menu-button:active:not(:disabled),
+.launch-button:active:not(:disabled),
+.advanced-list-item:active,
+.java-list li:active {
+  transform: scale(0.97);
+}
+
+/* Material ripple halo, hosted inside buttons/list rows. */
+.nav-item,
+.text-button,
+.raised-button,
+.menu-button,
+.launch-button,
+.advanced-list-item,
+.java-list li {
+  position: relative;
+  overflow: hidden;
+}
+
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.24;
+  pointer-events: none;
+  transform: scale(0);
+  animation: ripple-grow 0.55s ease-out forwards;
+}
+
+@keyframes ripple-grow {
+  to {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+/* Launching state: sweeping progress sheen across the launch button. */
+.launch-button.busy::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 40%;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--monet-on-primary-container);
+  animation: launch-sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes launch-sweep {
+  0% {
+    transform: translateX(-130%);
+  }
+  100% {
+    transform: translateX(390%);
+  }
+}
+
+/* Modal sheets fade the backdrop and pop the sheet into focus. */
+.sheet-backdrop {
+  animation: backdrop-in 0.18s ease-out;
+}
+
+.sheet {
+  animation: sheet-in 0.2s cubic-bezier(0.22, 0.9, 0.36, 1);
+}
+
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Log drawer slides up from the bottom edge. */
+.log-drawer {
+  animation: drawer-in 0.2s cubic-bezier(0.22, 0.9, 0.36, 1);
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* ============ Window title bar (HMCL jfx-tool-bar) ============ */
+
+.root-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.titlebar {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  height: 40px;
+  background: var(--monet-primary-container);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.titlebar-drag {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  padding: 0 12px;
+  min-width: 0;
+}
+
+.titlebar-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--monet-on-primary-container);
+  white-space: nowrap;
+}
+
+.titlebar-controls {
+  display: flex;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-button {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--monet-on-primary-container);
+  cursor: pointer;
+}
+
+.titlebar-button:hover {
+  background: var(--monet-on-primary-container);
+  color: var(--monet-primary-container);
+}
+
+.titlebar-close:hover {
+  background: var(--monet-error);
+  color: #ffffff;
+}
+
+.root {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Full-window page (non-home): the Decorator cell with a top navigation bar,
+   replacing the persistent sidebar like HMCL's Controllers.navigate(). */
+.decorated-page {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--monet-surface);
+}
+
+.nav-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  height: 52px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--monet-outline-variant);
+}
+
+.nav-back {
+  background: transparent;
+}
+
+.nav-back:hover {
+  color: var(--monet-primary);
+}
+
+.nav-bar-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--monet-on-surface);
+}
+
+.nav-bar-spacer {
+  flex: 1;
+}
+
+/* ============ Sidebar (AdvancedListBox) ============ */
+
+.sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  background: var(--monet-surface-container-low);
+  border-right: 1px solid var(--monet-outline-variant);
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.sidebar-category {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--monet-on-surface-variant);
+  opacity: 0.75;
+  padding: 12px 12px 4px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--monet-on-surface);
+  border-radius: 24px;
+  padding: 9px 12px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13.5px;
+}
+
+.nav-item:hover {
+  background: var(--monet-surface-container-high);
+}
+
+.nav-item.active {
+  background: var(--monet-secondary-container);
+  color: var(--monet-on-secondary-container);
+  font-weight: 600;
+}
+
+.account-item .avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--monet-primary-container);
+  color: var(--monet-on-primary-container);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.game-item .nav-icon {
+  color: var(--monet-primary);
+}
+
+.game-item .nav-text.two-line {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.game-item .primary {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.game-item .secondary {
+  font-size: 11.5px;
+  color: var(--monet-on-surface-variant);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ============ Content area ============ */
+
+.content {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.greeting {
+  margin: 4px 0 16px;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.page-title {
+  margin: 4px 0 14px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.card {
+  background: var(--monet-surface-container-lowest);
+  border: 1px solid var(--monet-outline-variant);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.card-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.announcement {
+  max-width: 560px;
+  background: var(--monet-secondary-container);
+  border-color: transparent;
+  color: var(--monet-on-secondary-container);
+}
+
+.announcement p {
+  margin: 0;
+  line-height: 1.55;
+  font-size: 13px;
+}
+
+.home-status {
+  position: absolute;
+  right: 28px;
+  bottom: 118px;
+  font-size: 12.5px;
+  color: var(--monet-on-surface-variant);
+}
+
+/* ============ Launch pane (bottom-right, HMCL signature) ============ */
+
+.launch-pane {
+  position: absolute;
+  right: 24px;
+  bottom: 20px;
+  display: flex;
+  align-items: stretch;
+  filter: drop-shadow(0 2px 6px rgba(27, 27, 33, 0.25));
+}
+
+.launch-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 200px;
+  height: 58px;
+  border: none;
+  cursor: pointer;
+  border-radius: 8px 0 0 8px;
+  background: var(--monet-primary-container);
+  color: var(--monet-on-primary-container);
+}
+
+.launch-button:hover:not(:disabled) {
+  background: var(--monet-primary);
+}
+
+.launch-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.launch-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.2;
+}
+
+.launch-text .primary {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.launch-text .secondary {
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.menu-button {
+  width: 30px;
+  height: 58px;
+  border: none;
+  cursor: pointer;
+  border-radius: 0 8px 8px 0;
+  background: var(--monet-surface-container-high);
+  color: var(--monet-on-surface-variant);
+  display: grid;
+  place-items: center;
+}
+
+.menu-button:hover {
+  background: var(--monet-surface-variant);
+}
+
+.version-popup {
+  position: absolute;
+  bottom: 66px;
+  right: 0;
+  width: 220px;
+  max-height: 300px;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  background: var(--monet-surface-container-lowest);
+  border: 1px solid var(--monet-outline-variant);
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(27, 27, 33, 0.2);
+}
+
+.version-popup button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--monet-on-surface);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.version-popup button:hover {
+  background: var(--monet-surface-container-high);
+}
+
+.version-popup button.selected {
+  background: var(--monet-secondary-container);
+  font-weight: 600;
+}
+
+.version-popup .empty {
+  padding: 10px 12px;
+  color: var(--monet-on-surface-variant);
+  font-size: 12.5px;
+}
+
+/* ============ Lists & cards ============ */
+
+.instance-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 720px;
+}
+
+.instance-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+  position: relative;
+  user-select: none;
+}
+
+.instance-card:hover {
+  border-color: var(--monet-primary-container);
+}
+
+.instance-card.selected {
+  outline: 2px solid var(--monet-primary-container);
+}
+
+.instance-card svg {
+  color: var(--monet-primary);
+  flex-shrink: 0;
+}
+
+.instance-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.instance-info .primary {
+  font-weight: 600;
+}
+
+.instance-info .secondary {
+  font-size: 12px;
+  color: var(--monet-on-surface-variant);
+}
+
+.badge {
+  background: var(--monet-primary-container);
+  color: var(--monet-on-primary-container);
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+.empty-hint {
+  color: var(--monet-on-surface-variant);
+  padding: 12px 2px;
+}
+
+.empty-hint.error {
+  color: var(--monet-error);
+}
+
+/* ============ Tabs / buttons / fields ============ */
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.tabs button {
+  border: 1px solid var(--monet-outline-variant);
+  background: var(--monet-surface-container-lowest);
+  color: var(--monet-on-surface);
+  border-radius: 999px;
+  padding: 6px 18px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.tabs button.active {
+  background: var(--monet-primary-container);
+  border-color: transparent;
+  color: var(--monet-on-primary-container);
+  font-weight: 600;
+}
+
+.text-button {
+  border: none;
+  background: transparent;
+  color: var(--monet-primary);
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.text-button:hover:not(:disabled) {
+  background: var(--monet-surface-container-high);
+}
+
+.text-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.settings-card {
+  max-width: 560px;
+  margin-bottom: 12px;
+}
+
+.settings-page {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.settings-main {
+  padding: 0;
+  overflow-y: auto;
+}
+
+.settings-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2px 28px 28px;
+}
+
+/* Slim, theme-aware scrollbars everywhere (pages, sidebars, drawers). */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--monet-outline) 45%, transparent);
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--monet-outline) 70%, transparent);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+.settings-header {
+  padding: 10px 2px 2px;
+}
+
+.settings-header .page-title {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.settings-subtitle {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  color: var(--monet-on-surface-variant);
+}
+
+/* Section bullets mirroring HMCL's grouped settings titles. */
+.settings-scroll .component-title {
+  position: relative;
+  margin: 22px 8px 12px;
+  padding-left: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--monet-on-surface-variant);
+}
+
+.settings-scroll .component-title::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 13px;
+  border-radius: 2px;
+  background: var(--monet-primary);
+  opacity: 0.55;
+}
+
+.settings-card {
+  max-width: 600px;
+  background: var(--monet-surface-container-lowest);
+  border: 1px solid var(--monet-outline-variant);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(20, 22, 40, 0.05);
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.settings-card:hover {
+  border-color: color-mix(in srgb, var(--monet-primary) 35%, var(--monet-outline-variant));
+  box-shadow: 0 6px 18px rgba(30, 40, 100, 0.12);
+}
+
+.settings-card .card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  margin-bottom: 8px;
+  color: var(--monet-on-surface);
+}
+
+.settings-card .card-title::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  background: var(--monet-primary-container);
+  flex-shrink: 0;
+}
+
+/* Setting rows: roomier with a soft hover highlight. */
+.settings-card .field {
+  padding: 9px 10px;
+  margin: 0 -10px;
+  border-radius: 10px;
+  transition: background-color 0.15s ease;
+}
+
+.settings-card .field:hover {
+  background: color-mix(in srgb, var(--monet-surface-container) 55%, transparent);
+}
+
+.settings-card .field span {
+  color: var(--monet-on-surface);
+  font-weight: 500;
+}
+
+/* Controls: consistent focus rings, tinted checkboxes and color swatches. */
+.settings-card .field input[type='color'],
+.settings-card .field input:not([type='checkbox']),
+.settings-card .field select {
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.settings-card .field input[type='color'] {
+  width: 46px;
+  height: 30px;
+  padding: 2px;
+  border-radius: 8px;
+}
+
+.settings-card .field input:not([type='checkbox']):focus,
+.settings-card .field select:focus {
+  border-color: var(--monet-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--monet-primary) 18%, transparent);
+}
+
+.settings-card .field input[type='checkbox'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  max-width: 18px;
+  flex: 0 0 18px;
+  margin: 0;
+  padding: 0;
+  border: 2px solid var(--monet-outline);
+  border-radius: 5px;
+  background-color: transparent;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.settings-card .field input[type='checkbox']:hover {
+  border-color: var(--monet-primary);
+}
+
+.settings-card .field input[type='checkbox']:checked {
+  background-color: var(--monet-primary);
+  border-color: var(--monet-primary);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='4.5 12.5 9.5 17.5 19.5 6.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 14px;
+}
+
+/* Buttons get a tinted hover instead of a grey chip. */
+.settings-card .text-button {
+  border-radius: 8px;
+  transition: background-color 0.15s ease;
+}
+
+.settings-card .text-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--monet-primary) 12%, transparent);
+}
+
+/* Java runtime rows feel like selectable list items. */
+.settings-scroll .java-list li {
+  border: 1px solid transparent;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.settings-scroll .java-list li.selected {
+  background: color-mix(in srgb, var(--monet-secondary-container) 55%, transparent);
+  border-color: color-mix(in srgb, var(--monet-primary-container) 60%, transparent);
+}
+
+/* Settings sidebar: lighter backers, pill items and tinted selection. */
+.settings-page .dl-sidebar {
+  border-right: none;
+  padding: 14px 8px;
+  background: transparent;
+}
+
+.settings-page .dl-sidebar .sidebar-category {
+  padding: 12px 12px 6px;
+}
+
+.settings-page .advanced-list-item {
+  border-radius: 10px;
+  margin: 1px 0;
+  padding: 9px 12px;
+  gap: 12px;
+  font-size: 13px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.settings-page .advanced-list-item:hover {
+  background: color-mix(in srgb, var(--monet-surface-container) 70%, transparent);
+}
+
+.settings-page .advanced-list-item.selected {
+  background: var(--monet-secondary-container);
+  color: var(--monet-on-secondary-container);
+}
+
+.settings-page .advanced-list-item.selected svg {
+  color: var(--monet-primary);
+}
+
+.component-title {
+  font-size: 14px;
+  color: var(--monet-on-surface-variant);
+  margin: 12px 4px 8px;
+  user-select: none;
+}
+
+.settings-scroll .page-title:first-child {
+  margin-top: 0;
+}
+
+.settings-scroll .notice-text {
+  margin: 0 0 12px;
+  color: var(--monet-on-surface-variant);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  font-size: 13.5px;
+}
+
+.field span {
+  color: var(--monet-on-surface-variant);
+}
+
+.field input,
+.field select {
+  border: 1px solid var(--monet-outline-variant);
+  border-radius: 8px;
+  background: var(--monet-surface-container-lowest);
+  color: var(--monet-on-surface);
+  padding: 6px 10px;
+  width: 240px;
+}
+
+.field code {
+  font-size: 11.5px;
+  word-break: break-all;
+  user-select: text;
+}
+
+.java-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.java-list li {
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.java-list li:hover {
+  background: var(--monet-surface-container);
+}
+
+.java-list li.selected {
+  background: var(--monet-secondary-container);
+}
+
+.java-list li code {
+  font-size: 11px;
+  color: var(--monet-on-surface-variant);
+  user-select: text;
+}
+
+.java-list .empty {
+  color: var(--monet-on-surface-variant);
+  cursor: default;
+}
+
+/* ============ Log drawer ============ */
+
+.log-drawer {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 42%;
+  display: flex;
+  flex-direction: column;
+  background: #101216;
+  color: #cfd4dc;
+  border-top: 2px solid var(--monet-primary-container);
+}
+
+.log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  color: var(--monet-on-surface-variant);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.log-header .text-button {
+  color: #9fb6ef;
+}
+
+.log-body {
+  margin: 0;
+  padding: 8px 14px;
+  overflow-y: auto;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.45;
+  user-select: text;
+}
+
+.log-body .err {
+  color: #f87171;
+}
+
+/* ============ Download page (HMCL DownloadPage / VersionsPage) ============ */
+
+.download-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.dl-sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  background: var(--monet-surface-container-low);
+  border-right: 1px solid var(--monet-outline-variant);
+  padding-bottom: 12px;
+}
+
+.class-title {
+  font-size: 12px;
+  color: var(--monet-on-surface);
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--monet-outline-variant);
+}
+
+.advanced-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  color: var(--monet-on-surface);
+  font-size: 13.5px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.advanced-list-item:hover {
+  background: rgba(208, 213, 253, 0.25);
+}
+
+.advanced-list-item.selected {
+  background: rgba(208, 213, 253, 0.5);
+  color: var(--monet-on-secondary-container);
+  font-weight: bold;
+}
+
+.advanced-list-item.selected svg {
+  color: var(--monet-on-secondary-container);
+}
+
+.dl-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  position: relative;
+}
+
+.search-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 13px 16px;
+}
+
+.search-card .search-row {
+  display: flex;
+  gap: 24px;
+}
+
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  flex: 1;
+  min-width: 0;
+}
+
+.search-field span {
+  color: var(--monet-on-surface-variant);
+  flex-shrink: 0;
+  min-width: 4em;
+}
+
+.search-field input,
+.search-field select,
+.installer-value input,
+.installer-value select {
+  border: 1px solid var(--monet-outline-variant);
+  border-radius: 8px;
+  background: var(--monet-surface-container-lowest);
+  color: var(--monet-on-surface);
+  padding: 7px 10px;
+  font-size: 13px;
+  flex: 1;
+  min-width: 0;
+}
+
+.search-field input {
+  min-width: 120px;
+}
+
+.search-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  border-top: 1px solid var(--monet-surface-container);
+  padding-top: 10px;
+}
+
+.search-actions-spacer {
+  flex: 1;
+}
+
+.pager-label {
+  font-size: 13px;
+  color: var(--monet-on-surface-variant);
+  min-width: 7em;
+  text-align: center;
+}
+
+.border-button {
+  border: 1px solid var(--monet-outline);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--monet-primary);
+  font-size: 13px;
+  padding: 7px 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.border-button:hover:not(:disabled) {
+  background: rgba(208, 213, 253, 0.15);
+}
+
+.border-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.raised-button {
+  border: none;
+  border-radius: 6px;
+  background: var(--monet-primary);
+  color: var(--monet-on-primary);
+  font-size: 14px;
+  padding: 9px 24px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.raised-button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.raised-button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.dl-list-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dl-list-card {
+  padding: 0;
+  overflow: hidden auto;
+  flex-shrink: 0;
+}
+
+.pager-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px 16px;
+  flex-shrink: 0;
+}
+
+.pager-bar .page-label {
+  font-size: 13px;
+  color: var(--monet-on-surface-variant);
+  min-width: 8em;
+  text-align: center;
+}
+
+.pager-bar .raised-button {
+  padding: 7px 14px;
+  font-size: 13px;
+}
+
+.md-list-cell {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 16px;
+  cursor: pointer;
+}
+
+.md-list-cell + .md-list-cell {
+  border-top: 1px solid var(--monet-surface-container);
+  margin-top: 8px;
+  padding-top: 9px;
+}
+
+.md-list-cell:hover {
+  background: rgba(208, 213, 253, 0.2);
+}
+
+.md-list-cell img {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 4px;
+}
+
+.addon-icon-fallback {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background: var(--monet-secondary-container);
+  color: var(--monet-on-secondary-container);
+  font-size: 18px;
+}
+
+.two-line {
+  flex: 1;
+  min-width: 0;
+}
+
+.two-line .first-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.two-line .title {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.two-line .subtitle {
+  font-size: 10px;
+  color: var(--monet-on-surface-variant);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tag {
+  background: var(--monet-secondary-container);
+  color: var(--monet-on-secondary-container);
+  border-radius: 3px;
+  padding: 2px 5px;
+  font-size: 10px;
+  font-weight: normal;
+  flex-shrink: 0;
+}
+
+.md-list-cell .actions {
+  display: flex;
+  gap: 8px;
+}
+
+.icon-button {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--monet-on-surface-variant);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.icon-button:hover {
+  background: var(--monet-surface-container-high);
+  color: var(--monet-primary);
+}
+
+.notice-pane {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  color: var(--monet-on-surface);
+  font-size: 20px;
+  text-align: center;
+  padding: 48px 24px;
+}
+
+.notice-pane.clickable {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  width: 100%;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 3px solid var(--monet-surface-container-high);
+  border-top-color: var(--monet-primary);
+  animation: hmcl-spin 1s linear infinite;
+}
+
+@keyframes hmcl-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.modpack-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-bottom: 8px;
+}
+
+/* Installer sheet (HMCL InstallersPage wizard step) */
+
+.sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(27, 27, 33, 0.45);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+}
+
+.sheet {
+  width: 540px;
+  max-width: calc(100% - 48px);
+  max-height: calc(100% - 48px);
+  overflow-y: auto;
+  box-shadow: 0 10px 30px rgba(27, 27, 33, 0.35);
+}
+
+.sheet-title {
+  margin: 0 0 10px;
+  font-size: 17px;
+}
+
+.installer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 0;
+}
+
+.installer-row + .installer-row {
+  border-top: 1px solid var(--monet-surface-container);
+}
+
+.installer-row input[type='checkbox'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  margin: 0;
+  padding: 0;
+  border: 2px solid var(--monet-outline);
+  border-radius: 5px;
+  background-color: transparent;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.installer-row input[type='checkbox']:hover {
+  border-color: var(--monet-primary);
+}
+
+.installer-row input[type='checkbox']:checked {
+  background-color: var(--monet-primary);
+  border-color: var(--monet-primary);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='4.5 12.5 9.5 17.5 19.5 6.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 14px;
+}
+
+.installer-name {
+  font-size: 13.5px;
+  color: var(--monet-on-surface);
+  flex-shrink: 0;
+}
+
+.installer-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
+.installer-value.fixed {
+  font-size: 13px;
+  color: var(--monet-on-surface-variant);
+}
+
+.installer-value input,
+.installer-value select {
+  width: 280px;
+  max-width: 100%;
+}
+
+.installer-value select:disabled {
+  opacity: 0.55;
+}
+
+.field-error {
+  color: var(--monet-error);
+  font-size: 11.5px;
+  font-style: normal;
+}
+
+.install-error {
+  margin-top: 8px;
+  word-break: break-all;
+}
+
+.sheet-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* ============ Account login dialogs (original CreateAccountPane style) ============ */
+
+.sheet.dialog {
+  width: 560px;
+  background: var(--monet-surface-container-lowest);
+  border: 1px solid var(--monet-outline-variant);
+  border-radius: 12px;
+  padding: 16px 20px 12px;
+}
+
+.dialog-heading {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--monet-outline-variant);
+}
+
+.dialog-error {
+  color: var(--monet-error);
+  font-size: 12px;
+  margin-top: 10px;
+  white-space: pre-wrap;
+}
+
+.account-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.form-label {
+  width: 80px;
+  flex-shrink: 0;
+  font-size: 13.5px;
+  text-align: right;
+}
+
+.form-input {
+  flex: 1;
+  border: 1px solid var(--monet-outline-variant);
+  border-radius: 8px;
+  background: var(--monet-surface-container-lowest);
+  color: var(--monet-on-surface);
+  padding: 7px 10px;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.form-input.error {
+  border-color: var(--monet-error);
+}
+
+.form-input::placeholder {
+  color: var(--monet-on-surface-variant);
+}
+
+.hyperlink {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--monet-primary);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.hyperlink:hover {
+  text-decoration: underline;
+}
+
+.hyperlink:focus-visible {
+  outline: 1px solid var(--monet-primary);
+  border-radius: 2px;
+}
+
+.menu-up-down-button {
+  background: transparent;
+  border: none;
+  padding: 4px 0;
+  color: var(--monet-primary);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.menu-up-down-button:hover {
+  background: var(--monet-surface-container);
+}
+
+.hint {
+  border: 1px solid var(--monet-outline);
+  border-radius: 5px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.hint .hyperlink {
+  font-size: inherit;
+}
+
+.hint.info {
+  background: var(--monet-primary-fixed-dim);
+  color: var(--monet-on-primary-fixed);
+}
+
+.hint.warning {
+  background: var(--monet-tertiary-fixed-dim);
+  color: var(--monet-on-tertiary-fixed);
+}
+
+.hint.error {
+  background: var(--monet-error-container);
+  color: var(--monet-on-error-container);
+}
+
+.link-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.code-box {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  background: var(--monet-surface-variant);
+  border-radius: 6px;
+  padding: 4px 14px;
+  cursor: pointer;
+  user-select: all;
+}
+
+.code-label {
+  font-size: 22px;
+  font-weight: bold;
+  color: var(--monet-primary);
+  font-family: 'Consolas', 'Noto Sans Mono', monospace;
+  letter-spacing: 2px;
+}
+
+.dialog-accept {
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--monet-primary);
+  font-size: 14px;
+  padding: 8px 18px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.dialog-accept:hover {
+  background: var(--monet-secondary-container);
+}
+
+.dialog-accept:disabled,
+.dialog-cancel:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.toast {
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #323232;
+  color: #ffffff;
+  font-size: 13px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  z-index: 60;
+  box-shadow: 0 6px 18px rgba(27, 27, 33, 0.35);
+}
+
+.account-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  background: var(--md-sys-color-surface-container-low);
+  cursor: pointer;
+}
+
+.account-card.selected {
+  outline: 2px solid var(--md-sys-color-primary);
+}
+
+.accounts-page {
+  display: flex;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+}
+
+.account-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 10px;
+  overflow-y: auto;
+}
+
+.account-card-global {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 8px 8px 0;
+  background: var(--monet-surface-container-low);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.account-card-global.selected {
+  background: var(--monet-secondary-container);
+}
+
+.account-radio {
+  accent-color: var(--monet-primary);
+  margin: 0 0 0 10px;
+  flex-shrink: 0;
+}
+
+.account-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--monet-primary);
+  color: var(--monet-on-primary);
+  flex-shrink: 0;
+}
+
+.account-icon-actions {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.account-icon-actions .icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--monet-on-surface-variant);
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+.account-icon-actions .icon-button:hover {
+  background: var(--monet-surface-container-highest);
+  color: var(--monet-on-surface);
+}
+
+.dialog-cancel {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--monet-on-surface);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.dialog-cancel:hover {
+  background: var(--monet-surface-container-highest);
+}
+
+.account-info {
+  flex: 1;
+}
+
+.account-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.account-add input {
+  flex: 1;
+}
+
+.field-note {
+  font-size: 12px;
+  color: var(--md-sys-color-outline);
+  margin: 4px 0;
+}
+
+.instance-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  position: relative;
+}
+
+.instance-actions .icon-button {
+  width: 36px;
+  height: 36px;
+}
+
+/* Radio-style instance selector, mirroring GameListCell's JFXRadioButton. */
+.instance-radio {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid var(--monet-outline);
+  background: transparent;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.instance-radio span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--monet-primary);
+}
+
+.instance-card.selected .instance-radio {
+  border-color: var(--monet-primary);
+}
+
+.instance-icon {
+  color: var(--monet-primary);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+/* Management dropdown, mirroring GameListCell's MORE_VERT popup. */
+.instance-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 60;
+  min-width: 180px;
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--monet-surface-container);
+  border: 1px solid var(--monet-outline-variant);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+
+.instance-menu li.separator {
+  height: 1px;
+  margin: 5px 6px;
+  background: var(--monet-outline-variant);
+}
+
+.instance-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--monet-on-surface);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.instance-menu button:hover {
+  background: var(--monet-surface-container-highest);
+  color: var(--monet-primary);
+}
+
+.instance-menu button.delete:hover {
+  color: var(--monet-error);
+}
+
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  border: none;
+  background: transparent;
+  cursor: default;
+}
+
+.account-item .avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+}
+
+/* ============ Global download progress footer ============ */
+
+.dl-footer {
+  flex-shrink: 0;
+  background: var(--monet-surface-container);
+  border-top: 1px solid var(--monet-outline-variant);
+  padding: 8px 12px 10px;
+  font-size: 12px;
+  color: var(--monet-on-surface);
+}
+
+.dl-footer-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.dl-footer-stage {
+  font-weight: 700;
+}
+
+.dl-footer-files {
+  color: var(--monet-on-surface-variant);
+}
+
+.dl-progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--monet-surface-container-high);
+  overflow: hidden;
+}
+
+.dl-progress-fill {
+  height: 100%;
+  background: var(--monet-primary);
+  transition: width 120ms linear;
+}
+
+.dl-footer-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+  min-width: 0;
+}
+
+.dl-current-file {
+  color: var(--monet-on-surface-variant);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.dl-footer-metrics {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* ----- InstallersPage-style installer sheet ----- */
+
+.installer-sheet-backdrop .installer-sheet {
+  width: min(660px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.installer-name-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
+}
+
+.installer-name-card .installer-game-name {
+  flex: 1;
+  margin: 0;
+}
+
+.installer-name-card .icon-button {
+  flex-shrink: 0;
+}
+
+.installer-name-card .field-error {
+  margin-right: 8px;
+  white-space: nowrap;
+}
+
+.installer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 180px);
+  gap: 8px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 4px;
+}
+
+.installer-item-wrapper {
+  width: 180px;
+}
+
+.installer-item {
+  height: 100%;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.installer-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.installer-item-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: #fff;
+  background: var(--monet-primary);
+}
+
+.installer-item-lines {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.installer-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.installer-item-status {
+  font-size: 12px;
+  color: var(--monet-on-surface-variant);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.installer-item-version {
+  width: 100%;
+}
+
+.installer-item-remove {
+  align-self: flex-start;
+  font-size: 12px;
+  padding: 0;
+}
+
+/* ----- Addon list fallback icons ----- */
+
+.addon-icon-fallback {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--monet-surface-container-highest);
+}
+
+/* ----- Sheets with a tall content list ----- */
+
+.sheet-subtitle {
+  color: var(--monet-on-surface-variant);
+  font-size: 13px;
+  margin-bottom: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sheet-flex {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sheet-list {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet-list .dl-list-card {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* ============ Personalization (theme accent + background) ============ */
+
+.titlebar,
+.root {
+  position: relative;
+  z-index: 1;
+}
+
+/* Full-window image layer, below content, only when a background is set. */
+.launcher-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.launcher-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(20, 20, 30, 0.18), rgba(20, 20, 30, 0.42));
+}
+
+/* Translucent surfaces when a background is active so it shows through. */
+html.has-bg .sidebar {
+  background-color: color-mix(in srgb, var(--monet-surface-container-low) 82%, transparent);
+}
+
+html.has-bg .card {
+  background-color: color-mix(in srgb, var(--monet-surface-container-lowest) 82%, transparent);
+}
+
+html.has-bg body {
+  background: transparent;
+}
+
+/* Translucent OS window (HMCL 透明背景): clear the opaque body paint so the
+   desktop shows through, and let the major surfaces stay slightly translucent. */
+html.transparent-bg body,
+html.transparent-bg #root {
+  background: transparent;
+}
+
+html.transparent-bg .sidebar,
+html.transparent-bg .dl-sidebar {
+  background-color: color-mix(in srgb, var(--monet-surface-container-low) 78%, transparent);
+}
+
+html.transparent-bg .card,
+html.transparent-bg .settings-card {
+  background-color: color-mix(in srgb, var(--monet-surface-container-lowest) 78%, transparent);
+}
+
+html.transparent-bg .titlebar {
+  background-color: color-mix(in srgb, var(--monet-primary-container) 72%, transparent);
+}
+
+html.transparent-bg .launcher-bg::after {
+  background: linear-gradient(180deg, rgba(20, 20, 30, 0.1), rgba(20, 20, 30, 0.24));
+}
+
+/* ============ Settings rows ============ */
+
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.field-row > span {
+  min-width: 96px;
+}
+
+.color-input {
+  width: 44px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--monet-outline-variant);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* ============ Context menu (accounts) ============ */
+
+.ctx-menu {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  padding: 4px;
+  background: var(--monet-surface-container-high);
+  border: 1px solid var(--monet-outline-variant);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+.ctx-menu button {
+  border: none;
+  background: transparent;
+  color: var(--monet-on-surface);
+  padding: 7px 12px;
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.ctx-menu button:hover {
+  background: var(--monet-secondary-container);
+}
+
+.ctx-menu button.danger {
+  color: var(--monet-error);
+}
+
+/* ============ Drag & drop import overlay ============ */
+
+.drag-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  background: rgba(20, 20, 30, 0.4);
+  pointer-events: none;
+}
+
+.drag-overlay-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 30px;
+  border-radius: 14px;
+  border: 2px dashed var(--monet-primary-container);
+  background: color-mix(in srgb, var(--monet-surface-container-lowest) 88%, transparent);
+  color: var(--monet-on-surface);
+  font-weight: 600;
+}
+
+/* ============ Notice / placeholder panes ============ */
+
+.notice-pane {
+  padding: 40px 32px;
+  text-align: left;
+  max-width: 480px;
+  color: var(--monet-on-surface-variant);
+}
+
+.notice-pane p {
+  margin: 8px 0 16px;
+  line-height: 1.65;
+}
+
+.notice-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--monet-on-surface);
+}
+
+.notice-text {
+  color: var(--monet-on-surface-variant);
+  line-height: 1.65;
+  margin: 6px 0;
+}
+
+/* ============ Addon detail page (mirrors ui/instances/DownloadPage) ============ */
+
+.addon-detail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.addon-detail-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--monet-surface-container-high);
+}
+
+.addon-detail-icon {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  object-fit: cover;
+  background: var(--monet-surface-container-high);
+}
+
+.addon-detail-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.addon-detail-title {
+  font-size: 19px;
+  font-weight: 700;
+  margin: 0 0 4px;
+  color: var(--monet-on-surface);
+}
+
+.addon-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.addon-detail-desc {
+  margin: 6px 0 0;
+  color: var(--monet-on-surface-variant);
+  line-height: 1.55;
+  font-size: 13px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.addon-detail-links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.addon-versions-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 20px 20px;
+}
+
+.version-group-title,
+.group-title {
+  padding: 18px 0 6px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--monet-on-surface);
+}
+
+.addon-version {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--monet-on-surface);
+}
+
+.addon-version:hover {
+  background: var(--monet-surface-container-high);
+}
+
+.addon-version-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.addon-version-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.addon-version-meta {
+  color: var(--monet-on-surface-variant);
+  font-size: 12px;
+}
+
+.addon-version-date {
+  margin-left: 2px;
+}
+
+.addon-version-arrow {
+  color: var(--monet-on-surface-variant);
+}
+
+.addon-channel-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  font-size: 0;
+}
+
+.addon-channel-icon.release,
+.channel-tag.release {
+  color: var(--monet-primary);
+  background: color-mix(in srgb, var(--monet-primary) 16%, transparent);
+}
+
+.addon-channel-icon.beta,
+.channel-tag.beta {
+  color: var(--monet-tertiary);
+  background: color-mix(in srgb, var(--monet-tertiary) 16%, transparent);
+}
+
+.addon-channel-icon.alpha,
+.channel-tag.alpha {
+  color: var(--monet-error);
+  background: color-mix(in srgb, var(--monet-error) 16%, transparent);
+}
+
+.addon-loader-tag {
+  font-size: 11px;
+  color: var(--monet-on-surface-variant);
+  border: 1px solid var(--monet-outline-variant);
+  border-radius: 4px;
+  padding: 0 5px;
+}
+
+/* ============ Addon version dialog ============ */
+
+.addon-version-dialog {
+  width: 460px;
+  max-width: calc(100vw - 48px);
+  padding: 16px 20px 12px;
+}
+
+.addon-version-dialog .sheet-title {
+  margin: 0 0 12px;
+}
+
+.version-links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.dependencies {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.dependency-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.dep-type {
+  flex: none;
+  font-size: 11px;
+  color: var(--monet-primary);
+  border: 1px solid var(--monet-outline-variant);
+  border-radius: 4px;
+  padding: 0 5px;
+}
+
+.dep-name {
+  color: var(--monet-on-surface);
+}
+
+.dep-name.remote {
+  color: var(--monet-primary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.addon-version-dialog .sheet-actions {
+  margin-top: 4px;
+}
+
+/* ============ Full-page modpack install wizard ============ */
+
+.install-page {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: var(--monet-surface);
+  display: flex;
+  flex-direction: column;
+}
+
+.install-page-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--monet-surface-container-high);
+  height: 48px;
+  flex: none;
+}
+
+.install-page-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--monet-on-surface);
+}
+
+.install-page-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.install-week-card {
+  max-width: 640px;
+  padding: 24px;
+}
+
+.install-week-title {
+  font-size: 17px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: var(--monet-on-surface);
+}
+
+.install-description {
+  margin: 8px 0 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--monet-surface-container-high);
+  color: var(--monet-on-surface-variant);
+  line-height: 1.6;
+  font-size: 13px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.install-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.install-progress {
+  padding: 24px 0;
+  text-align: center;
+}
+
+.progress-percent {
+  font-size: 56px;
+  font-weight: 300;
+  color: var(--monet-primary);
+  margin-bottom: 8px;
+}
+
+.progress-count {
+  font-size: 15px;
+  color: var(--monet-on-surface-variant);
+}
+
+.progress-file {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--monet-on-surface-variant);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.progress-speed {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--monet-on-surface-variant);
+}
+
+.progress-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--monet-surface-container-high);
+  overflow: hidden;
+  margin-top: 24px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--monet-primary);
+  transition: width 120ms linear;
+}
+
+/* ===== Instance Settings Page (full-page) ===== */
+.instance-settings-page {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: var(--monet-surface);
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-page-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--monet-outline-variant);
+  background: var(--monet-surface-container-low);
+}
+
+.settings-page-title {
+  flex: 1;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--monet-on-surface);
+}
+
+.settings-page-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.settings-section-card {
+  background: var(--monet-surface-container-low);
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+.settings-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--monet-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--monet-outline-variant);
+}
+
+.settings-subsection {
+  margin-bottom: 20px;
+}
+
+.settings-subsection-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--monet-on-surface);
+  margin-bottom: 12px;
+  padding-left: 4px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+}
+
+.settings-row:not(:last-child) {
+  border-bottom: 1px solid var(--monet-outline-variant);
+}
+
+.settings-row-label {
+  flex: 1;
+  min-width: 180px;
+}
+
+.settings-row-label span:first-child {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--monet-on-surface);
+}
+
+.settings-row-subtitle {
+  display: block;
+  font-size: 12px;
+  color: var(--monet-on-surface-variant);
+  margin-top: 2px;
+}
+
+.settings-row-control {
+  flex: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 200px;
+}
+
+.settings-row-control select,
+.settings-row-control input[type="text"],
+.settings-row-control input[type="number"],
+.settings-row-control textarea {
+  flex: 1;
+  min-width: 240px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--monet-outline-variant);
+  background: var(--monet-surface);
+  color: var(--monet-on-surface);
+  font-size: 14px;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+
+.settings-row-control select:focus,
+.settings-row-control input:focus,
+.settings-row-control textarea:focus {
+  outline: none;
+  border-color: var(--monet-primary);
+  box-shadow: 0 0 0 2px var(--monet-primary-container);
+}
+
+.settings-row-control textarea {
+  resize: vertical;
+  min-height: 60px;
+  font-family: monospace;
+}
+
+.radio-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.radio-option input[type="radio"] {
+  accent-color: var(--monet-primary);
+}
+
+.memory-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.memory-input input {
+  width: 80px;
+}
+
+.memory-bar-row {
+  align-items: flex-start;
+}
+
+.memory-bar-container {
+  flex: 1;
+  min-width: 240px;
+}
+
+.memory-bar-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--monet-surface-container-high);
+  overflow: hidden;
+}
+
+.memory-bar-fill {
+  height: 100%;
+  background: var(--monet-primary);
+  border-radius: 4px;
+  transition: width 200ms ease;
+}
+
+.java-runtime-control {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.java-path-input {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  max-width: 480px;
+}
+
+.java-path-input input {
+  flex: 1;
+}
+
+.resolution-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.resolution-input input {
+  width: 80px;
+}
+
+.resolution-input span {
+  color: var(--monet-on-surface-variant);
+}
