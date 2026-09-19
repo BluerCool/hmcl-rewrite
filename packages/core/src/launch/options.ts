@@ -15,12 +15,20 @@ export interface LaunchOptions {
   maxMemory?: number;
   /** Initial heap in MiB. */
   minMemory?: number;
+  /** Metaspace size in MiB (`-XX:MaxMetaspaceSize`). */
+  permSize?: number;
   /** Initial window width; enables the custom-resolution feature flag. */
   width?: number;
   /** Initial window height. */
   height?: number;
   /** Launch the game in fullscreen. */
   fullscreen?: boolean;
+  /** Open the game window maximized (no resolution arguments). */
+  maximized?: boolean;
+  /** Quick Play mode. `multiplayer` needs `server`, `singleplayer` `quickPlayWorld`. */
+  quickPlay?: 'none' | 'multiplayer' | 'singleplayer' | 'realms';
+  /** World name used by the `singleplayer` quick play mode. */
+  quickPlayWorld?: string;
   /** Join this server after launch (`host` or `host:port`). */
   server?: string;
   /** Extra JVM arguments appended before the classpath. */
@@ -35,4 +43,14 @@ export interface LaunchOptions {
   processPriority?: 'high' | 'above_normal' | 'normal' | 'below_normal' | 'low';
   /** Disable HMCL-generated optimizing JVM arguments (G1GC tuning). */
   noGeneratedOptimizingJVMArgs?: boolean;
+  /** Disable every launcher-supplied default JVM argument. */
+  noGeneratedJvmArgs?: boolean;
+  /** Shell command run right before the game process spawns. */
+  preLaunchCommand?: string;
+  /** Shell command run after the game process exits. */
+  postExitCommand?: string;
+  /** Absolute path overriding the natives directory; extraction is skipped. */
+  nativesDirectoryOverride?: string;
+  /** Stop the game file completeness check before launching. */
+  skipGameCompletenessCheck?: boolean;
 }

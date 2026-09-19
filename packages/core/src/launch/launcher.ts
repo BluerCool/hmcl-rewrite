@@ -125,14 +125,22 @@ export class Launcher {
     onEvent: (event: LaunchEvent) => void
   ): Promise<LaunchCommand> {
     onEvent({ type: 'stage', stage: 'downloading-libraries' });
-    await this.ensureGameFiles(version, (progress) =>
-      onEvent({ type: 'download-progress', progress })
-    );
+    if (options.skipGameCompletenessCheck !== true) {
+      await this.ensureGameFiles(version, (progress) =>
+        onEvent({ type: 'download-progress', progress })
+      );
+    }
 
     onEvent({ type: 'stage', stage: 'extracting-natives' });
     const command = buildLaunchCommand(this.repo, version, auth, options);
-    await cleanNativesDirectory(command.nativesDirectory);
-    await extractNatives(this.repo, version, command.nativesDirectory);
+    if (options.nativesDirectoryOverride === undefined) {
+      await cleanNativesDirectory(command.nativesDirectory);
+      await extractNatives(this.repo, version, command.nativesDirectory);
+    }
+
+    if (options.preLaunchCommand !== undefined && options.preLaunchCommand.trim() !== '') {
+      await runShellCommand(options.preLaunchCommand, command.workingDirectory);
+    }
 
     onEvent({ type: 'stage', stage: 'starting' });
     const child = spawn(command.argv[0]!, command.argv.slice(1), {
@@ -147,12 +155,29 @@ export class Launcher {
     onEvent({ type: 'stage', stage: 'running' });
     streamOutput(child, onEvent);
     child.once('exit', (code) => {
+      if (options.postExitCommand !== undefined && options.postExitCommand.trim() !== '') {
+        void runShellCommand(options.postExitCommand, command.workingDirectory);
+      }
       onEvent({ type: 'stage', stage: 'exited' });
       onEvent({ type: 'exit', code });
     });
 
     return command;
   }
+}
+
+/** Runs a shell command and resolves when it exits (stdout/stderr passthrough). */
+function runShellCommand(raw: string, cwd: string): Promise<void> {
+  return new Promise((resolve) => {
+    const child = spawn(raw, {
+      cwd,
+      shell: true,
+      stdio: 'inherit',
+      env: process.env
+    });
+    child.once('error', () => resolve());
+    child.once('exit', () => resolve());
+  });
 }
 
 function streamOutput(child: ChildProcess, onEvent: (event: LaunchEvent) => void): void {

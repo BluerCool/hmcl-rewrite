@@ -4,7 +4,7 @@
  */
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { basename, extname, join } from 'node:path';
-import { cp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { inflateRawSync } from 'node:zlib';
 import { totalmem } from 'node:os';
 import {
@@ -50,6 +50,7 @@ import {
 import type {
   AccountDto,
   AddonSubdir,
+  InstanceFolderEntryDto,
   InstanceSettingsDto,
   LoaderKind,
   ModpackInspectDto,
@@ -218,12 +219,30 @@ function handle(channel: string, handler: IpcHandler): void {
 handle('versions:list', async () => {
   const repo = state.repository();
   const versions = await repo.listInstalledVersions();
+  const manifests = new Map(versions.map((version) => [version.id, version.manifest]));
   return versions.map((version) => ({
     id: version.id,
     jar: version.manifest.jar ?? version.id,
-    type: version.manifest.type
+    type: version.manifest.type,
+    gameVersion: resolveGameVersion(version.id, manifests)
   }));
 });
+
+/** Walks the `inheritsFrom` chain to the root vanilla version id. */
+function resolveGameVersion(
+  id: string,
+  manifests: Map<string, { inheritsFrom?: string }>
+): string {
+  let current = id;
+  const seen = new Set<string>();
+  while (!seen.has(current)) {
+    seen.add(current);
+    const next = manifests.get(current)?.inheritsFrom;
+    if (next === undefined || next === '') return current;
+    current = next;
+  }
+  return current;
+}
 
 handle('versions:remote', async () => {
   const provider = state.provider();
@@ -483,18 +502,37 @@ handle('launch:start', async (versionId: string) => {
   if (state.settings.maxMemory !== undefined) {
     launchOptions.maxMemory = state.settings.maxMemory;
   }
+  const instanceSettings = await readInstanceSettings(repo, versionId);
   const effectiveOptions = applyInstanceSettings(
     launchOptions,
-    await readInstanceSettings(repo, versionId),
+    instanceSettings,
     repo,
     versionId,
     state.settings.maxMemory,
     javaExecutable
   );
+
+  // 启动器可见性: keep/hide/close/hide_and_reopen once the game runs.
+  const visibility = instanceSettings.launcherVisibility;
+  const reopenOnExit = visibility === 'hide_and_reopen';
+  const onLauncherEvent = (event: { type: string; code?: number | null; [key: string]: unknown }): void => {
+    if (event.type === 'exit' && reopenOnExit && win !== null && !win.isDestroyed()) {
+      win.show();
+    }
+    broadcast({ kind: event.type, launchId, ...(event as object) });
+  };
+
   void launcher
-    .launch(resolved, auth, effectiveOptions, (event) =>
-      broadcast({ kind: event.type, launchId, ...(event as object) })
-    )
+    .launch(resolved, auth, effectiveOptions, (event) => onLauncherEvent(event as { type: string }))
+    .then(() => {
+      if (win !== null) {
+        if (reopenOnExit || visibility === 'hide') {
+          win.hide();
+        } else if (visibility === 'close') {
+          win.close();
+        }
+      }
+    })
     .catch((error: unknown) => {
       broadcast({
         kind: 'output',
@@ -1001,6 +1039,7 @@ handle('instance-settings:set', async (id: string, settings: InstanceSettingsDto
   if (typeof settings.autoMemory === 'boolean') cleaned.autoMemory = settings.autoMemory;
   if (typeof settings.minMemory === 'number') cleaned.minMemory = settings.minMemory;
   if (typeof settings.maxMemory === 'number') cleaned.maxMemory = settings.maxMemory;
+  if (typeof settings.permSize === 'number' && settings.permSize > 0) cleaned.permSize = settings.permSize;
   if (typeof settings.javaArgs === 'string' && settings.javaArgs !== '') {
     cleaned.javaArgs = settings.javaArgs;
   }
@@ -1031,8 +1070,176 @@ handle('instance-settings:set', async (id: string, settings: InstanceSettingsDto
     cleaned.wrapper = settings.wrapper.trim();
   }
   if (settings.noOptimizingJVMArgs === true) cleaned.noOptimizingJVMArgs = true;
+  for (const key of [
+    'icon',
+    'javaArgs',
+    'quickPlayWorld',
+    'precallCommand',
+    'nativesDirectory'
+  ] as const) {
+    const value = settings[key];
+    if (typeof value === 'string' && value !== '') (cleaned as Record<string, unknown>)[key] = value;
+  }
+  if (
+    settings.windowType === 'windowed' ||
+    settings.windowType === 'maximized' ||
+    settings.windowType === 'fullscreen'
+  ) {
+    cleaned.windowType = settings.windowType;
+  }
+  const quickPlay = settings.quickPlay;
+  if (quickPlay === 'none' || quickPlay === 'multiplayer' || quickPlay === 'singleplayer' || quickPlay === 'realms') {
+    cleaned.quickPlay = quickPlay;
+  }
+  const graphics = settings.graphicsBackend;
+  if (graphics === 'default' || graphics === 'opengl' || graphics === 'vulkan') {
+    cleaned.graphicsBackend = graphics;
+  }
+  const visibility = settings.launcherVisibility;
+  if (
+    visibility === 'keep' ||
+    visibility === 'hide' ||
+    visibility === 'close' ||
+    visibility === 'hide_and_reopen'
+  ) {
+    cleaned.launcherVisibility = visibility;
+  }
+  for (const booleanKey of [
+    'dontCheckJvmValidity',
+    'useCustomNatives',
+    'notPatchNatives',
+    'useNativeGlfwSdl',
+    'useNativeOpenAL',
+    'dontCheckGameCompleteness',
+    'showLogs',
+    'enableDebugLogOutput',
+    'allowAutoAgent',
+    'disableAutoGameOptions',
+    'noJvmArgs'
+  ] as const) {
+    if (settings[booleanKey] === true) cleaned[booleanKey] = true;
+  }
   await writeInstanceSettings(repo, id, cleaned);
   return readInstanceSettings(repo, id);
+});
+
+// ============ Instance folder & icon management ============
+
+/** Resolves an instance subfolder for the management tabs. */
+function instanceFolderPath(repo: GameRepository, instanceId: string, folder: string): string {
+  return folder === '' ? repo.versionRoot(instanceId) : join(repo.versionRoot(instanceId), folder);
+}
+
+handle(
+  'instance:list-folder',
+  async (instanceId: string, folder: string): Promise<InstanceFolderEntryDto[]> => {
+    const repo = state.repository();
+    await assertInstanceExists(repo, instanceId);
+    const entries = await readdir(instanceFolderPath(repo, instanceId, folder), {
+      withFileTypes: true
+    }).catch(() => [] as import('node:fs').Dirent[]);
+    return entries
+      .map((entry) => ({ name: entry.name, isDirectory: entry.isDirectory() }))
+      .sort((a, b) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : (a.isDirectory ? -1 : 1)));
+  }
+);
+
+handle('instance:open-folder', async (instanceId: string, folder: string): Promise<void> => {
+  const repo = state.repository();
+  await assertInstanceExists(repo, instanceId);
+  const path = instanceFolderPath(repo, instanceId, folder);
+  await mkdir(path, { recursive: true });
+  await shell.openPath(path);
+});
+
+handle('instance:delete-file', async (instanceId: string, folder: string, name: string): Promise<void> => {
+  const repo = state.repository();
+  await assertInstanceExists(repo, instanceId);
+  await rm(join(instanceFolderPath(repo, instanceId, folder), name), { recursive: true, force: true });
+});
+
+handle('instance:clear-assets', async (instanceId: string): Promise<void> => {
+  const repo = state.repository();
+  await assertInstanceExists(repo, instanceId);
+  await rm(repo.assetsDir(), { recursive: true, force: true });
+  await rm(join(repo.versionRoot(instanceId), 'resources'), { recursive: true, force: true });
+});
+
+handle('instance:clear-libraries', async (): Promise<void> => {
+  const repo = state.repository();
+  await rm(repo.librariesDir(), { recursive: true, force: true });
+});
+
+handle('instance:clean', async (instanceId: string): Promise<void> => {
+  const repo = state.repository();
+  await assertInstanceExists(repo, instanceId);
+  const root = repo.versionRoot(instanceId);
+  await rm(join(root, 'logs'), { recursive: true, force: true });
+  await rm(join(root, 'crash-reports'), { recursive: true, force: true });
+});
+
+/** Well-known icon file names searched under the version root. */
+const INSTANCE_ICON_NAMES = ['icon.png', 'icon.jpg', 'icon.jpeg', 'icon.gif', 'icon.webp'];
+
+async function instanceIconPath(repo: GameRepository, instanceId: string): Promise<string | undefined> {
+  const root = repo.versionRoot(instanceId);
+  const names = [await readInstanceSettings(repo, instanceId).then((s) => s.icon), ...INSTANCE_ICON_NAMES];
+  for (const name of names) {
+    if (name === undefined || name === '') continue;
+    const path = join(root, name);
+    try {
+      await readFile(path);
+      return path;
+    } catch {
+      // try next candidate
+    }
+  }
+  return undefined;
+}
+
+async function readInstanceIconDataUrl(instanceId: string): Promise<string | undefined> {
+  const repo = state.repository();
+  await assertInstanceExists(repo, instanceId);
+  const path = await instanceIconPath(repo, instanceId);
+  if (path === undefined) return undefined;
+  const data = await readFile(path);
+  const ext = extname(path).replace('.', '');
+  const mime = ext === 'svg' ? 'image/svg+xml' : `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+  return `data:${mime};base64,${data.toString('base64')}`;
+}
+
+handle('instance:icon-read', (instanceId: string) => readInstanceIconDataUrl(instanceId));
+
+handle('instance:icon-pick', async (instanceId: string): Promise<string | undefined> => {
+  const repo = state.repository();
+  await assertInstanceExists(repo, instanceId);
+  const picked = await dialog.showOpenDialog({
+    title: '选择实例图标',
+    filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'] }],
+    properties: ['openFile']
+  });
+  if (picked.canceled || picked.filePaths.length === 0) return undefined;
+  const source = picked.filePaths[0]!;
+  const ext = extname(source).toLowerCase() || '.png';
+  const iconName = `icon${ext}`;
+  await mkdir(repo.versionRoot(instanceId), { recursive: true });
+  await cp(source, join(repo.versionRoot(instanceId), iconName));
+  const current = await readInstanceSettings(repo, instanceId);
+  await writeInstanceSettings(repo, instanceId, { ...current, icon: iconName });
+  return readInstanceIconDataUrl(instanceId);
+});
+
+handle('instance:icon-clear', async (instanceId: string): Promise<void> => {
+  const repo = state.repository();
+  await assertInstanceExists(repo, instanceId);
+  const path = await instanceIconPath(repo, instanceId);
+  if (path !== undefined) {
+    await rm(path, { force: true });
+  }
+  const current = await readInstanceSettings(repo, instanceId);
+  const next = { ...current };
+  delete next.icon;
+  await writeInstanceSettings(repo, instanceId, next);
 });
 
 // ============ Window controls ============

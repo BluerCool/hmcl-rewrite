@@ -3,6 +3,8 @@ import type {
   AccountDto,
   DownloadProgressDto,
   InstalledVersionDto,
+  InstanceFolder,
+  InstanceFolderEntryDto,
   InstanceSettingsDto,
   JavaRuntimeDto,
   LauncherEvent,
@@ -43,6 +45,7 @@ import {
   PersonIcon,
   PlayIcon,
   PublicIcon,
+  RefreshIcon,
   RestoreIcon,
   RocketIcon,
   SettingsIcon,
@@ -120,13 +123,23 @@ export function useLauncherState() {
     },
     []
   );
+
+  const [managingId, setManagingId] = useState<string | undefined>(undefined);
+
+  /** Opens the instance management page for `id` and marks it the current one. */
+  const openInstance = useCallback(
+    (id: string): void => {
+      setCurrentIdAndPersist(id);
+      setManagingId(id);
+    },
+    [setCurrentIdAndPersist]
+  );
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [stage, setStage] = useState('空闲');
   const [progress, setProgress] = useState<DownloadProgressDto | undefined>();
   const [downloading, setDownloading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [deviceCode, setDeviceCode] = useState<MicrosoftDeviceCodeDto | undefined>(undefined);
-  const [editingInstanceId, setEditingInstanceId] = useState<string | undefined>(undefined);
   const [maximized, setMaximized] = useState(false);
 
   const finishTimer = useRef<number | undefined>(undefined);
@@ -230,8 +243,9 @@ export function useLauncherState() {
     busy,
     setBusy,
     deviceCode,
-    editingInstanceId,
-    setEditingInstanceId,
+    managingId,
+    setManagingId,
+    openInstance,
     maximized,
     refreshInstalled,
     refreshAccounts,
@@ -586,6 +600,7 @@ export function Shell(): React.JSX.Element | null {
           </div>
         )}
       </div>
+      {state.managingId !== undefined && <InstanceManagePage state={pageProps} />}
       {dragging && (
         <div className="drag-overlay">
           <div className="drag-overlay-inner">
@@ -1007,8 +1022,9 @@ interface StateHook {
   busy: boolean;
   setBusy: (busy: boolean) => void;
   deviceCode: MicrosoftDeviceCodeDto | undefined;
-  editingInstanceId: string | undefined;
-  setEditingInstanceId: (id: string | undefined) => void;
+  managingId: string | undefined;
+  setManagingId: (id: string | undefined) => void;
+  openInstance: (id: string) => void;
   maximized: boolean;
   refreshInstalled: (preferredSettings?: SettingsDto) => Promise<void>;
   refreshAccounts: () => Promise<void>;
@@ -1129,7 +1145,7 @@ function InstancesPage({ state }: StateHookProps): React.JSX.Element {
   };
 
   const openSettings = (id: string): void => {
-    state.setEditingInstanceId(id);
+    state.openInstance(id);
   };
 
   const [menuFor, setMenuFor] = useState<string | undefined>(undefined);
@@ -1277,34 +1293,36 @@ function InstancesPage({ state }: StateHookProps): React.JSX.Element {
           </div>
         </div>
       )}
-
-      {state.editingInstanceId !== undefined && (
-        <InstanceSettingsPage
-          instanceId={state.editingInstanceId}
-          onClose={() => state.setEditingInstanceId(undefined)}
-        />
-      )}
     </div>
   );
 }
 
-function InstanceSettingsPage({
-  instanceId,
-  onClose
+function InstanceSettingsPanel({
+  instanceId
 }: {
   instanceId: string;
-  onClose: () => void;
 }): React.JSX.Element {
   const [settings, setSettings] = useState<InstanceSettingsDto | undefined>(undefined);
   const [systemMemory, setSystemMemory] = useState<number | undefined>(undefined);
-  const [quickMode, setQuickMode] = useState<'none' | 'multiplayer'>('none');
+  const [iconData, setIconData] = useState<string | undefined>(undefined);
+  const [quickMode, setQuickMode] = useState<'none' | 'multiplayer' | 'singleplayer' | 'realms'>('none');
 
   useEffect(() => {
+    let cancelled = false;
     void hmcl().getInstanceSettings(instanceId).then((s) => {
+      if (cancelled) return;
       setSettings(s);
-      setQuickMode(s.server !== undefined && s.server !== '' ? 'multiplayer' : 'none');
+      const quick = s.quickPlay ??
+        (s.server !== undefined && s.server !== '' ? 'multiplayer' : 'none');
+      setQuickMode(quick);
+    });
+    void hmcl().readInstanceIcon(instanceId).then((data) => {
+      if (!cancelled) setIconData(data);
     });
     void hmcl().getSystemMemory().then(setSystemMemory);
+    return () => {
+      cancelled = true;
+    };
   }, [instanceId]);
 
   const save = (patch: Partial<InstanceSettingsDto>): void => {
@@ -1338,11 +1356,7 @@ function InstanceSettingsPage({
 
   if (settings === undefined) {
     return (
-      <div className="instance-settings-page">
-        <div className="settings-page-nav" onClick={(e) => e.stopPropagation()}>
-          <button className="icon-button" title="返回" onClick={onClose}><ArrowBackIcon size={20} /></button>
-          <span className="settings-page-title">实例设置 — {instanceId}</span>
-        </div>
+      <div className="instance-settings-page instance-settings-panel">
         <div className="settings-page-body"><div className="spinner" /></div>
       </div>
     );
@@ -1351,18 +1365,7 @@ function InstanceSettingsPage({
   const javaMode = settings.javaExecutable ? 'custom' : 'auto';
 
   return (
-    <div className="instance-settings-page">
-      <div className="settings-page-nav" onClick={(e) => e.stopPropagation()}>
-        <button className="icon-button" title="返回" onClick={onClose}><ArrowBackIcon size={20} /></button>
-        <span className="settings-page-title">实例设置 — {instanceId}</span>
-        <button className="raised-button" title="测试启动" onClick={() => {
-          void hmcl().launch(instanceId);
-          onClose();
-        }}>
-          <RocketIcon size={16} /> 测试启动
-        </button>
-      </div>
-
+    <div className="instance-settings-page instance-settings-panel">
       <div className="settings-page-body">
         <div className="settings-section-card">
           <div className="settings-section-title">基本设置</div>
@@ -1384,6 +1387,40 @@ function InstanceSettingsPage({
               <option value="global">全局</option>
               <option value="instance">隔离</option>
             </select>
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <span>游戏图标</span>
+              <span className="settings-row-subtitle">为当前实例指定自定义图标</span>
+            </div>
+            <div className="settings-row-control instance-icon-control">
+              {iconData !== undefined ? (
+                <img className="instance-icon-preview" src={iconData} alt="实例图标" />
+              ) : (
+                <span className="instance-icon-none">未设置</span>
+              )}
+              <button
+                className="border-button"
+                onClick={() => {
+                  void hmcl().pickInstanceIcon(instanceId).then((data) => {
+                    if (data !== undefined) setIconData(data);
+                  });
+                }}
+              >
+                设置图标
+              </button>
+              {iconData !== undefined && (
+                <button
+                  className="border-button"
+                  onClick={() => {
+                    void hmcl().clearInstanceIcon(instanceId).then(() => setIconData(undefined));
+                  }}
+                >
+                  清除
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1529,25 +1566,24 @@ function InstanceSettingsPage({
                 <span className="settings-row-subtitle">选择启动时的窗口状态</span>
               </div>
               <select
-                value={settings.fullscreen ? 'fullscreen' : (settings.width && settings.height ? 'windowed' : 'default')}
+                value={settings.windowType ?? (settings.fullscreen ? 'fullscreen' : 'windowed')}
                 onChange={(e) => {
                   const v = e.target.value;
-                  if (v === 'fullscreen') save({ fullscreen: true });
-                  else if (v === 'windowed') save({ fullscreen: false, width: 854, height: 480 });
+                  if (v === 'fullscreen') save({ windowType: 'fullscreen', fullscreen: false });
+                  else if (v === 'maximized') save({ windowType: 'maximized', fullscreen: false });
                   else {
+                    clearSetting('windowType');
                     save({ fullscreen: false });
-                    clearSetting('width');
-                    clearSetting('height');
                   }
                 }}
               >
-                <option value="default">默认</option>
                 <option value="windowed">窗口化</option>
+                <option value="maximized">最大化</option>
                 <option value="fullscreen">全屏</option>
               </select>
             </div>
 
-            {!settings.fullscreen && settings.width && settings.height && (
+            {(settings.windowType ?? 'windowed') === 'windowed' && settings.width !== undefined && settings.height !== undefined && (
               <div className="settings-row">
                 <div className="settings-row-label">
                   <span>分辨率</span>
@@ -1591,13 +1627,15 @@ function InstanceSettingsPage({
               <select
                 value={quickMode}
                 onChange={(e) => {
-                  const value = e.target.value as 'none' | 'multiplayer';
+                  const value = e.target.value as 'none' | 'multiplayer' | 'singleplayer' | 'realms';
                   setQuickMode(value);
-                  if (value === 'none') clearSetting('server');
+                  save({ quickPlay: value });
                 }}
               >
                 <option value="none">无</option>
                 <option value="multiplayer">多人联机</option>
+                <option value="singleplayer">单人游戏</option>
+                <option value="realms">Realms</option>
               </select>
             </div>
 
@@ -1612,6 +1650,21 @@ function InstanceSettingsPage({
                   value={settings.server ?? ''}
                   placeholder="mc.example.com:25565"
                   onChange={(e) => save(e.target.value ? { server: e.target.value } : {})}
+                />
+              </div>
+            )}
+
+            {quickMode === 'singleplayer' && (
+              <div className="settings-row">
+                <div className="settings-row-label">
+                  <span>世界名称</span>
+                  <span className="settings-row-subtitle">启动后直接进入指定世界</span>
+                </div>
+                <input
+                  type="text"
+                  value={settings.quickPlayWorld ?? ''}
+                  placeholder="MyWorld"
+                  onChange={(e) => save(e.target.value ? { quickPlayWorld: e.target.value } : {})}
                 />
               </div>
             )}
@@ -1687,6 +1740,18 @@ function InstanceSettingsPage({
 
           <div className="settings-row">
             <div className="settings-row-label">
+              <span>不添加默认的 Java 虚拟机参数</span>
+              <span className="settings-row-subtitle">不自动向启动命令附加默认 JVM 参数</span>
+            </div>
+            <input
+              type="checkbox"
+              checked={settings.noJvmArgs === true}
+              onChange={(e) => save({ noJvmArgs: e.target.checked })}
+            />
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-row-label">
               <span>不自动添加 Java 虚拟机优化参数</span>
               <span className="settings-row-subtitle">不自动向启动命令附加 G1GC 等优化参数</span>
             </div>
@@ -1699,20 +1764,67 @@ function InstanceSettingsPage({
 
           <div className="settings-row">
             <div className="settings-row-label">
+              <span>不检查 Java 虚拟机与游戏的兼容性</span>
+              <span className="settings-row-subtitle">跳过 Java 版本与游戏要求的一致性检查</span>
+            </div>
+            <input
+              type="checkbox"
+              checked={settings.dontCheckJvmValidity === true}
+              onChange={(e) => save({ dontCheckJvmValidity: e.target.checked })}
+            />
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-row-label">
               <span>Java 虚拟机参数</span>
               <span className="settings-row-subtitle">额外的 JVM 参数 (与全局设置合并)</span>
             </div>
-            <input
-              type="text"
+            <textarea
               value={settings.javaArgs ?? ''}
               placeholder="-Xmx2g -Xms512m -XX:+UseG1GC"
+              rows={2}
               onChange={(e) => save(e.target.value ? { javaArgs: e.target.value } : {})}
             />
+          </div>
+
+          <div className="settings-subsection">
+            <div className="settings-subsection-title">已弃用的 JVM 内存选项</div>
+            <div className="settings-row">
+              <div className="settings-row-label">
+                <span>内存永久保存区域</span>
+                <span className="settings-row-subtitle">只用于兼容旧版本</span>
+              </div>
+              <div className="settings-row-control memory-input">
+                <input
+                  type="number"
+                  value={settings.permSize ?? 512}
+                  min={0}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    save(v > 0 ? { permSize: v } : {});
+                  }}
+                />
+                <span>MiB</span>
+              </div>
+            </div>
           </div>
         </div>
 
         <div className="settings-section-card">
           <div className="settings-section-title">自定义命令</div>
+
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <span>游戏启动前执行命令</span>
+              <span className="settings-row-subtitle">将在游戏启动前调用</span>
+            </div>
+            <input
+              type="text"
+              value={settings.precallCommand ?? ''}
+              placeholder="echo start"
+              onChange={(e) => save(e.target.value ? { precallCommand: e.target.value } : {})}
+            />
+          </div>
 
           <div className="settings-row">
             <div className="settings-row-label">
@@ -1726,8 +1838,600 @@ function InstanceSettingsPage({
               onChange={(e) => save(e.target.value ? { wrapper: e.target.value } : {})}
             />
           </div>
+
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <span>游戏结束后执行命令</span>
+              <span className="settings-row-subtitle">将在游戏结束后调用</span>
+            </div>
+            <input
+              type="text"
+              value={settings.postExitCommand ?? ''}
+              placeholder="echo done"
+              onChange={(e) => save(e.target.value ? { postExitCommand: e.target.value } : {})}
+            />
+          </div>
+        </div>
+
+        <div className="settings-section-card">
+          <div className="settings-section-title">图形设置</div>
+
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <span>图形 API</span>
+              <span className="settings-row-subtitle">仅对 Minecraft 26.2+ 生效</span>
+            </div>
+            <select
+              value={settings.graphicsBackend ?? 'default'}
+              onChange={(e) => {
+                const v = e.target.value as 'default' | 'opengl' | 'vulkan';
+                if (v === 'default') clearSetting('graphicsBackend');
+                else save({ graphicsBackend: v });
+              }}
+            >
+              <option value="default">默认</option>
+              <option value="opengl">OpenGL</option>
+              <option value="vulkan">Vulkan</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="settings-section-card">
+          <div className="settings-section-title">本地库设置</div>
+
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <span>使用自定义本地库</span>
+              <span className="settings-row-subtitle">使用指定目录的本地库替代解压出的原生库</span>
+            </div>
+            <input
+              type="checkbox"
+              checked={settings.useCustomNatives === true}
+              onChange={(e) => save({ useCustomNatives: e.target.checked })}
+            />
+          </div>
+
+          {settings.useCustomNatives && (
+            <div className="settings-row">
+              <div className="settings-row-label">
+                <span>本地库路径</span>
+              </div>
+              <input
+                type="text"
+                value={settings.nativesDirectory ?? ''}
+                placeholder="/path/to/natives"
+                onChange={(e) => save(e.target.value ? { nativesDirectory: e.target.value } : {})}
+              />
+            </div>
+          )}
+
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <span>不尝试自动替换本地库</span>
+              <span className="settings-row-subtitle">跳过系统本地库的自动修补</span>
+            </div>
+            <input
+              type="checkbox"
+              checked={settings.notPatchNatives === true}
+              onChange={(e) => save({ notPatchNatives: e.target.checked })}
+            />
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <span>使用本地 GLFW/SDL</span>
+              <span className="settings-row-subtitle">仅 Linux / FreeBSD</span>
+            </div>
+            <input
+              type="checkbox"
+              checked={settings.useNativeGlfwSdl === true}
+              onChange={(e) => save({ useNativeGlfwSdl: e.target.checked })}
+            />
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <span>使用本地 OpenAL</span>
+              <span className="settings-row-subtitle">仅 Linux / FreeBSD</span>
+            </div>
+            <input
+              type="checkbox"
+              checked={settings.useNativeOpenAL === true}
+              onChange={(e) => save({ useNativeOpenAL: e.target.checked })}
+            />
+          </div>
+        </div>
+
+        <div className="settings-section-card">
+          <div className="settings-section-title">启动器设置</div>
+
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <span>启动器可见性</span>
+              <span className="settings-row-subtitle">游戏启动后启动器窗口的显示行为</span>
+            </div>
+            <select
+              value={settings.launcherVisibility ?? 'keep'}
+              onChange={(e) => {
+                const v = e.target.value as 'keep' | 'hide' | 'close' | 'hide_and_reopen';
+                save({ launcherVisibility: v });
+              }}
+            >
+              <option value="keep">保持可见</option>
+              <option value="hide">隐藏</option>
+              <option value="close">关闭启动器</option>
+              <option value="hide_and_reopen">隐藏后自动恢复</option>
+            </select>
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <span>允许修改游戏</span>
+              <span className="settings-row-subtitle">允许通过附加 Java Agent 修改游戏以改善游戏体验</span>
+            </div>
+            <input
+              type="checkbox"
+              checked={settings.allowAutoAgent === true}
+              onChange={(e) => save({ allowAutoAgent: e.target.checked })}
+            />
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <span>不自动切换游戏语言</span>
+            </div>
+            <input
+              type="checkbox"
+              checked={settings.disableAutoGameOptions === true}
+              onChange={(e) => save({ disableAutoGameOptions: e.target.checked })}
+            />
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <span>查看日志</span>
+              <span className="settings-row-subtitle">启动遇到问题时自动打开日志</span>
+            </div>
+            <input
+              type="checkbox"
+              checked={settings.showLogs === true}
+              onChange={(e) => save({ showLogs: e.target.checked })}
+            />
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <span>输出调试日志</span>
+            </div>
+            <input
+              type="checkbox"
+              checked={settings.enableDebugLogOutput === true}
+              onChange={(e) => save({ enableDebugLogOutput: e.target.checked })}
+            />
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <span>不检查游戏完整性</span>
+              <span className="settings-row-subtitle">跳过启动前对游戏文件的完整性检查</span>
+            </div>
+            <input
+              type="checkbox"
+              checked={settings.dontCheckGameCompleteness === true}
+              onChange={(e) => save({ dontCheckGameCompleteness: e.target.checked })}
+            />
+          </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ----- Instance management page (HMCL GameInstancePage) -----
+
+type InstanceTab = 'settings' | 'installers' | 'mods' | 'resourcepacks' | 'worlds' | 'schematics';
+
+const INSTANCE_TABS: { id: InstanceTab; label: string; icon: React.JSX.Element }[] = [
+  { id: 'settings', label: '游戏设置', icon: <SettingsIcon size={20} /> },
+  { id: 'installers', label: '自动安装', icon: <DownloadIcon size={20} /> },
+  { id: 'mods', label: '模组管理', icon: <ExtensionIcon size={20} /> },
+  { id: 'resourcepacks', label: '资源包管理', icon: <TextureIcon size={20} /> },
+  { id: 'worlds', label: '世界管理', icon: <PublicIcon size={20} /> },
+  { id: 'schematics', label: '原理图管理', icon: <ListIcon size={20} /> }
+];
+
+/** 浏览 submenu targets, mirroring GameInstancePage.Skin's browseList. */
+const INSTANCE_BROWSE_TARGETS: { label: string; folder: InstanceFolder }[] = [
+  { label: '实例运行文件夹', folder: '' },
+  { label: '模组文件夹', folder: 'mods' },
+  { label: '资源包文件夹', folder: 'resourcepacks' },
+  { label: '世界文件夹', folder: 'saves' },
+  { label: '原理图文件夹', folder: 'schematics' },
+  { label: '光影包文件夹', folder: 'shaderpacks' },
+  { label: '截图文件夹', folder: 'screenshots' },
+  { label: '配置文件夹', folder: 'config' },
+  { label: '日志文件夹', folder: 'logs' },
+  { label: '崩溃报告文件夹', folder: 'crash-reports' }
+];
+
+function InstanceManagePage({ state }: StateHookProps): React.JSX.Element {
+  const instanceId = state.managingId;
+  const [tab, setTab] = useState<InstanceTab>('settings');
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<string | undefined>(undefined);
+  const [renameValue, setRenameValue] = useState('');
+
+  useEffect(() => {
+    if (instanceId === undefined) return;
+    setTab('settings');
+    setBrowseOpen(false);
+    setManageOpen(false);
+  }, [instanceId]);
+
+  if (instanceId === undefined) return <></>;
+
+  const launchTest = (): void => {
+    if (state.busy) return;
+    state.setBusy(true);
+    state.appendLog({ text: `>>> 测试启动 ${instanceId}`, isError: false });
+    hmcl()
+      .launch(instanceId)
+      .catch((error: unknown) => {
+        state.appendLog({ text: String(error), isError: true });
+        state.setBusy(false);
+      });
+  };
+
+  const close = (): void => state.setManagingId(undefined);
+
+  const renameInstance = async (): Promise<void> => {
+    if (renameTarget === undefined || renameValue === '') return;
+    try {
+      await hmcl().renameInstance(renameTarget, renameValue);
+      setRenameTarget(undefined);
+      setRenameValue('');
+      await state.refreshInstalled();
+      if (renameTarget === instanceId) state.setManagingId(renameValue);
+    } catch (error) {
+      state.appendLog({ text: `重命名失败: ${String(error)}`, isError: true });
+    }
+  };
+
+  const duplicateInstance = async (): Promise<void> => {
+    const newId = `${instanceId}_copy`;
+    try {
+      await hmcl().copyInstance(instanceId, newId);
+      await state.refreshInstalled();
+      state.appendLog({ text: `已复制实例: ${newId}`, isError: false });
+    } catch (error) {
+      state.appendLog({ text: `复制失败: ${String(error)}`, isError: true });
+    }
+  };
+
+  const removeInstance = async (): Promise<void> => {
+    try {
+      await hmcl().deleteInstance(instanceId);
+      await state.refreshInstalled();
+      state.setManagingId(undefined);
+    } catch (error) {
+      state.appendLog({ text: `删除失败: ${String(error)}`, isError: true });
+    }
+  };
+
+  const clearAssets = async (): Promise<void> => {
+    try {
+      await hmcl().deleteRemoteAssets(instanceId);
+      state.appendLog({ text: '已删除资源文件', isError: false });
+    } catch (error) {
+      state.appendLog({ text: String(error), isError: true });
+    }
+  };
+
+  return (
+    <div className="instance-manage-page">
+      <div className="instances-page-nav">
+        <button className="icon-button" title="返回" onClick={close}>
+          <ArrowBackIcon size={20} />
+        </button>
+        <span className="nav-bar-title">实例管理 - {instanceId}</span>
+        <span className="nav-bar-spacer" />
+        <button className="text-button" title="更新整合包" disabled>
+          <UpdateIcon size={15} /> 更新整合包
+        </button>
+        <button className="text-button" disabled={state.busy} onClick={() => void launchTest()}>
+          <RocketIcon size={15} /> 测试游戏
+        </button>
+        <div className="dropdown-wrap">
+          <button
+            className="text-button"
+            onClick={() => {
+              setBrowseOpen((open) => !open);
+              setManageOpen(false);
+            }}
+          >
+            <ArrowForwardIcon size={15} /> 浏览
+          </button>
+          {browseOpen && (
+            <ul className="dropdown-menu instance-context-menu">
+              {INSTANCE_BROWSE_TARGETS.map((target) => (
+                <li key={target.folder}>
+                  <button
+                    onClick={() => {
+                      setBrowseOpen(false);
+                      void hmcl().openInstanceFolder(instanceId, target.folder);
+                    }}
+                  >
+                    {target.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="dropdown-wrap">
+          <button
+            className="text-button"
+            onClick={() => {
+              setManageOpen((open) => !open);
+              setBrowseOpen(false);
+            }}
+          >
+            <MoreVertIcon size={15} /> 管理
+          </button>
+          {manageOpen && (
+            <ul className="dropdown-menu instance-context-menu">
+              <li>
+                <button onClick={() => { setManageOpen(false); void launchTest(); }}>
+                  <RocketIcon size={15} /> 测试游戏
+                </button>
+              </li>
+              <li className="menu-separator" />
+              <li>
+                <button onClick={() => { setManageOpen(false); setRenameTarget(instanceId); setRenameValue(instanceId); }}>
+                  <EditIcon size={15} /> 重命名该实例
+                </button>
+              </li>
+              <li>
+                <button onClick={() => { setManageOpen(false); void duplicateInstance(); }}>
+                  <ContentCopyIcon size={15} /> 复制游戏实例
+                </button>
+              </li>
+              <li>
+                <button className="delete" onClick={() => { setManageOpen(false); void removeInstance(); }}>
+                  <DeleteForeverIcon size={15} /> 删除该实例
+                </button>
+              </li>
+              <li className="menu-separator" />
+              <li>
+                <button onClick={() => { setManageOpen(false); void clearAssets(); }}>
+                  删除所有游戏资源文件
+                </button>
+              </li>
+              <li>
+                <button onClick={() => { setManageOpen(false); void hmcl().clearLibraries(); }}>
+                  删除所有库文件
+                </button>
+              </li>
+              <li>
+                <button onClick={() => { setManageOpen(false); void hmcl().cleanInstance(instanceId); }}>
+                  清理游戏文件夹
+                </button>
+              </li>
+            </ul>
+          )}
+        </div>
+      </div>
+
+      <div className="instance-manage-body">
+        <aside className="dl-sidebar">
+          {INSTANCE_TABS.map((item) => (
+            <button
+              key={item.id}
+              className={`advanced-list-item${tab === item.id ? ' selected' : ''}`}
+              onClick={() => setTab(item.id)}
+            >
+              {item.icon}
+              {item.label}
+            </button>
+          ))}
+        </aside>
+        <main className="dl-main">
+          {tab === 'settings' && <InstanceSettingsPanel instanceId={instanceId} key={instanceId} />}
+          {tab === 'installers' && <InstallersTab state={state} instanceId={instanceId} key={instanceId} />}
+          {tab === 'mods' && (
+            <FolderListTab instanceId={instanceId} folder="mods" title="模组管理" subtitle=".jar / .disabled 文件" />
+          )}
+          {tab === 'resourcepacks' && (
+            <FolderListTab instanceId={instanceId} folder="resourcepacks" title="资源包管理" subtitle=".zip / 文件夹" />
+          )}
+          {tab === 'worlds' && (
+            <FolderListTab instanceId={instanceId} folder="saves" title="世界管理" subtitle="世界文件夹" />
+          )}
+          {tab === 'schematics' && (
+            <FolderListTab instanceId={instanceId} folder="schematics" title="原理图管理" subtitle=".nbt / .schem / .schematic" />
+          )}
+        </main>
+      </div>
+
+      {renameTarget !== undefined && (
+        <div className="sheet-backdrop">
+          <div className="sheet">
+            <div className="card-title">重命名实例</div>
+            <div className="installer-row">
+              <span>请输入要修改的名称：</span>
+              <input
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') void renameInstance(); }}
+              />
+            </div>
+            <div className="sheet-actions">
+              <button onClick={() => { setRenameTarget(undefined); setRenameValue(''); }}>取消</button>
+              <button className="raised-button" onClick={() => void renameInstance()}>确定</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {renameTarget !== undefined && (
+        <button className="menu-backdrop" aria-label="关闭" onClick={() => setRenameTarget(undefined)} />
+      )}
+    </div>
+  );
+}
+
+/** 自动安装 tab: installs a loader/build from the instance's game version. */
+function InstallersTab({
+  state,
+  instanceId
+}: StateHookProps & { instanceId: string }): React.JSX.Element {
+  const instance = state.installed.find((version) => version.id === instanceId);
+  const gameVersion = instance?.gameVersion;
+
+  const install = async (kind: LoaderKind): Promise<void> => {
+    if (gameVersion === undefined) return;
+    try {
+      const versions = await hmcl().fetchLoaderVersions(kind, gameVersion);
+      const latest = versions.find((v) => v.stable) ?? versions[0];
+      if (latest === undefined) {
+        state.appendLog({ text: `没有可用的 ${kind} 版本`, isError: true });
+        return;
+      }
+      const newId = await hmcl().installLoader(kind, gameVersion, latest.id);
+      await state.refreshInstalled();
+      state.appendLog({ text: `已安装 ${kind}，新实例: ${newId}`, isError: false });
+    } catch (error) {
+      state.appendLog({ text: `安装 ${kind} 失败: ${String(error)}`, isError: true });
+    }
+  };
+
+  if (gameVersion === undefined) {
+    return (
+      <div className="settings-scroll">
+        <div className="settings-page-body"><div className="spinner" /></div>
+      </div>
+    );
+  }
+
+  const installedMarkers = new Set<string>();
+  for (const key of Object.keys(KIND_LABELS) as LoaderKind[]) {
+    if (instanceId.toLowerCase().includes(key)) installedMarkers.add(key);
+  }
+
+  return (
+    <div className="settings-scroll">
+      <SettingsTabHeader title="自动安装" subtitle={`为 ${instanceId} (${gameVersion}) 安装加载器时会创建新的继承实例`} />
+      <div className="component-title">安装器</div>
+      <div className="card settings-card">
+        {(['fabric', 'forge', 'neoforge', 'optifine'] as LoaderKind[]).map((kind) => (
+          <div key={kind} className="installer-row">
+            <div>
+              <div className="primary">{KIND_LABELS[kind]}</div>
+              <div className="secondary">
+                {installedMarkers.has(kind) ? '当前实例已包含该加载器' : '点击以安装最新版本'}
+              </div>
+            </div>
+            <button
+              className="raised-button"
+              disabled={state.busy || installedMarkers.has(kind)}
+              onClick={() => void install(kind)}
+            >
+              安装
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Folder management tab used by 模组/资源包/世界/原理图 tabs. */
+function FolderListTab({
+  instanceId,
+  folder,
+  title,
+  subtitle
+}: {
+  instanceId: string;
+  folder: InstanceFolder;
+  title: string;
+  subtitle: string;
+}): React.JSX.Element {
+  const [entries, setEntries] = useState<InstanceFolderEntryDto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [confirmName, setConfirmName] = useState<string | undefined>(undefined);
+
+  const reload = useCallback(() => {
+    setLoading(true);
+    void hmcl()
+      .listInstanceFolder(instanceId, folder)
+      .then(setEntries)
+      .finally(() => setLoading(false));
+  }, [instanceId, folder]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const remove = async (): Promise<void> => {
+    if (confirmName === undefined) return;
+    await hmcl().deleteInstanceFile(instanceId, folder, confirmName);
+    setConfirmName(undefined);
+    reload();
+  };
+
+  return (
+    <div className="settings-scroll">
+      <SettingsTabHeader title={title} subtitle={subtitle} />
+      <div className="folder-list-toolbar">
+        <span className="secondary">{entries.length} 项</span>
+        <span className="nav-bar-spacer" />
+        <button className="text-button" onClick={() => void hmcl().openInstanceFolder(instanceId, folder)}>
+          <ArrowForwardIcon size={15} /> 打开文件夹
+        </button>
+        <button className="text-button" onClick={reload}>
+          <RefreshIcon size={15} /> 刷新
+        </button>
+      </div>
+      <div className="card settings-card">
+        {loading ? (
+          <div className="spinner" />
+        ) : entries.length === 0 ? (
+          <div className="empty-hint">该文件夹为空。</div>
+        ) : (
+          <ul className="folder-list">
+            {entries.map((entry) => (
+              <li key={entry.name} className="folder-list-item">
+                <span className="folder-list-icon">{entry.isDirectory ? <GameIcon size={18} /> : <ListIcon size={18} />}</span>
+                <span className="folder-list-name">{entry.name}</span>
+                <span className="secondary">{entry.isDirectory ? '文件夹' : '文件'}</span>
+                <button
+                  className="icon-button"
+                  title="删除"
+                  aria-label="删除"
+                  onClick={() => setConfirmName(entry.name)}
+                >
+                  <DeleteForeverIcon size={17} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {confirmName !== undefined && (
+        <>
+          <div className="sheet-backdrop">
+            <div className="sheet">
+              <div className="card-title">确定要删除 “{confirmName}” 吗？</div>
+              <div className="sheet-actions">
+                <button onClick={() => setConfirmName(undefined)}>取消</button>
+                <button className="raised-button delete" onClick={() => void remove()}>删除</button>
+              </div>
+            </div>
+          </div>
+          <button className="menu-backdrop" aria-label="关闭" onClick={() => setConfirmName(undefined)} />
+        </>
+      )}
     </div>
   );
 }

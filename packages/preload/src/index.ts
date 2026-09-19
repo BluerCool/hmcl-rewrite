@@ -43,6 +43,18 @@ const api: HmclApi = {
   getInstanceSettings: (id) => ipcRenderer.invoke('instance-settings:get', id),
   saveInstanceSettings: (id, settings) =>
     ipcRenderer.invoke('instance-settings:set', id, settings),
+  listInstanceFolder: (instanceId, folder) =>
+    ipcRenderer.invoke('instance:list-folder', instanceId, folder),
+  openInstanceFolder: (instanceId, folder) =>
+    ipcRenderer.invoke('instance:open-folder', instanceId, folder),
+  deleteInstanceFile: (instanceId, folder, name) =>
+    ipcRenderer.invoke('instance:delete-file', instanceId, folder, name),
+  readInstanceIcon: (instanceId) => ipcRenderer.invoke('instance:icon-read', instanceId),
+  pickInstanceIcon: (instanceId) => ipcRenderer.invoke('instance:icon-pick', instanceId),
+  clearInstanceIcon: (instanceId) => ipcRenderer.invoke('instance:icon-clear', instanceId),
+  deleteRemoteAssets: (instanceId) => ipcRenderer.invoke('instance:clear-assets', instanceId),
+  clearLibraries: () => ipcRenderer.invoke('instance:clear-libraries'),
+  cleanInstance: (instanceId) => ipcRenderer.invoke('instance:clean', instanceId),
   pickThemeBackground: () => ipcRenderer.invoke('theme:pick-background'),
   readThemeBackground: (path) => ipcRenderer.invoke('theme:read-background', path),
   setLauncherBackgroundTransparent: (enabled) =>

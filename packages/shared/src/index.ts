@@ -20,6 +20,8 @@ export interface InstalledVersionDto {
   /** Version family for display (e.g. inheritsFrom target or the id). */
   jar: string | undefined;
   type: string | undefined;
+  /** Root vanilla game version this instance inherits from. */
+  gameVersion: string;
 }
 
 /** A remote version from the manifest. */
@@ -34,6 +36,25 @@ export interface JavaRuntimeDto {
   executable: string;
   majorVersion: number;
   versionString: string;
+}
+
+/** Subdirectory of an instance that the management tabs can browse. */
+export type InstanceFolder =
+  | 'mods'
+  | 'resourcepacks'
+  | 'shaderpacks'
+  | 'saves'
+  | 'schematics'
+  | 'config'
+  | 'logs'
+  | 'crash-reports'
+  | 'screenshots'
+  | '';
+
+/** One entry inside an instance folder. */
+export interface InstanceFolderEntryDto {
+  name: string;
+  isDirectory: boolean;
 }
 
 /** Modrinth project types surfaced in the download page. */
@@ -201,6 +222,7 @@ export interface InstanceSettingsDto {
   autoMemory?: boolean;
   minMemory?: number;
   maxMemory?: number;
+  permSize?: number;
   javaArgs?: string;
   gameDirType?: 'global' | 'instance';
   javaExecutable?: string;
@@ -213,6 +235,26 @@ export interface InstanceSettingsDto {
   processPriority?: 'high' | 'above_normal' | 'normal' | 'below_normal' | 'low';
   wrapper?: string;
   noOptimizingJVMArgs?: boolean;
+  icon?: string;
+  windowType?: 'windowed' | 'maximized' | 'fullscreen';
+  quickPlay?: 'none' | 'multiplayer' | 'singleplayer' | 'realms';
+  quickPlayWorld?: string;
+  noJvmArgs?: boolean;
+  dontCheckJvmValidity?: boolean;
+  precallCommand?: string;
+  postExitCommand?: string;
+  graphicsBackend?: 'default' | 'opengl' | 'vulkan';
+  useCustomNatives?: boolean;
+  nativesDirectory?: string;
+  notPatchNatives?: boolean;
+  useNativeGlfwSdl?: boolean;
+  useNativeOpenAL?: boolean;
+  launcherVisibility?: 'keep' | 'hide' | 'close' | 'hide_and_reopen';
+  dontCheckGameCompleteness?: boolean;
+  showLogs?: boolean;
+  enableDebugLogOutput?: boolean;
+  allowAutoAgent?: boolean;
+  disableAutoGameOptions?: boolean;
 }
 
 /** Events pushed from main to renderer. */
@@ -234,6 +276,24 @@ export interface HmclApi {
   fetchLoaderVersions(kind: LoaderKind, mcVersion: string): Promise<LoaderVersionDto[]>;
   /** @returns the id of the newly created instance */
   installLoader(kind: LoaderKind, mcVersion: string, loaderId: string): Promise<string>;
+  /** Lists the contents of an instance folder (mods/resourcepacks/...). */
+  listInstanceFolder(instanceId: string, folder: InstanceFolder): Promise<InstanceFolderEntryDto[]>;
+  /** Opens an instance folder in the system file manager. */
+  openInstanceFolder(instanceId: string, folder: InstanceFolder): Promise<void>;
+  /** Deletes a file or directory inside an instance folder. */
+  deleteInstanceFile(instanceId: string, folder: InstanceFolder, name: string): Promise<void>;
+  /** Returns the instance icon as a data URL, or undefined when unset. */
+  readInstanceIcon(instanceId: string): Promise<string | undefined>;
+  /** Picks an image; copies it into the instance as its icon. */
+  pickInstanceIcon(instanceId: string): Promise<string | undefined>;
+  /** Removes the instance icon. */
+  clearInstanceIcon(instanceId: string): Promise<void>;
+  /** Deletes all game assets for an instance (assets + resources folders). */
+  deleteRemoteAssets(instanceId: string): Promise<void>;
+  /** Deletes the shared libraries folder. */
+  clearLibraries(): Promise<void>;
+  /** Cleans the instance's junk folders (logs, crash-reports). */
+  cleanInstance(instanceId: string): Promise<void>;
   /** Searches Modrinth projects (模组/资源包/光影/整合包). */
   searchModrinthProjects(payload: {
     type: ModrinthProjectType;

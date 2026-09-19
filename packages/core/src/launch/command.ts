@@ -48,11 +48,13 @@ export function buildLaunchCommand(
   const gameDir = options.gameDir ?? repo.rootDir;
   const jarId = version.jar ?? version.id;
   const primaryJar = repo.versionJar(jarId);
-  const nativesDirectory = repo.nativesDir(
-    version.id,
-    mojangOSName(CURRENT_OS),
-    CURRENT_ARCH
-  );
+  const nativesDirectory =
+    options.nativesDirectoryOverride ??
+    repo.nativesDir(
+      version.id,
+      mojangOSName(CURRENT_OS),
+      CURRENT_ARCH
+    );
 
   const classpath = buildClasspath(repo, version, primaryJar);
   const assetsRoot = repo.assetsDir();
@@ -128,41 +130,47 @@ export function buildLaunchCommand(
   ) {
     argv.push(`-Xms${options.minMemory}m`);
   }
+  if (options.permSize !== undefined && options.permSize > 0) {
+    argv.push(`-XX:MaxMetaspaceSize=${options.permSize}m`);
+  }
 
   for (const arg of options.jvmArguments ?? []) {
     argv.push(arg);
   }
 
-  // Encoding + security defaults from DefaultLauncher.
-  argv.push('-Dfile.encoding=UTF-8');
-  if (options.javaMajorVersion < 19) {
-    argv.push('-Dsun.stdout.encoding=UTF-8', '-Dsun.stderr.encoding=UTF-8');
-  } else {
-    argv.push('-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8');
-  }
-  argv.push(
-    '-Djava.rmi.server.useCodebaseOnly=true',
-    '-Dcom.sun.jndi.rmi.object.trustURLCodebase=false',
-    '-Dcom.sun.jndi.cosnaming.object.trustURLCodebase=false',
-    '-Dlog4j2.formatMsgNoLookups=true'
-  );
-
-  if (options.noGeneratedOptimizingJVMArgs !== true) {
+  // Encoding + security defaults from DefaultLauncher. Suppressed entirely
+  // when the instance opts out of the default JVM arguments.
+  if (options.noGeneratedJvmArgs !== true) {
+    argv.push('-Dfile.encoding=UTF-8');
+    if (options.javaMajorVersion < 19) {
+      argv.push('-Dsun.stdout.encoding=UTF-8', '-Dsun.stderr.encoding=UTF-8');
+    } else {
+      argv.push('-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8');
+    }
     argv.push(
-      '-XX:+UnlockExperimentalVMOptions',
-      '-XX:+UseG1GC',
-      '-XX:G1NewSizePercent=20',
-      '-XX:G1ReservePercent=20',
-      '-XX:MaxGCPauseMillis=50',
-      '-XX:G1HeapRegionSize=32m'
+      '-Djava.rmi.server.useCodebaseOnly=true',
+      '-Dcom.sun.jndi.rmi.object.trustURLCodebase=false',
+      '-Dcom.sun.jndi.cosnaming.object.trustURLCodebase=false',
+      '-Dlog4j2.formatMsgNoLookups=true'
+    );
+
+    if (options.noGeneratedOptimizingJVMArgs !== true) {
+      argv.push(
+        '-XX:+UnlockExperimentalVMOptions',
+        '-XX:+UseG1GC',
+        '-XX:G1NewSizePercent=20',
+        '-XX:G1ReservePercent=20',
+        '-XX:MaxGCPauseMillis=50',
+        '-XX:G1HeapRegionSize=32m'
+      );
+    }
+
+    argv.push(
+      '-Dfml.ignoreInvalidMinecraftCertificates=true',
+      '-Dfml.ignorePatchDiscrepancies=true',
+      `-Dminecraft.client.jar=${primaryJar}`
     );
   }
-
-  argv.push(
-    '-Dfml.ignoreInvalidMinecraftCertificates=true',
-    '-Dfml.ignorePatchDiscrepancies=true',
-    `-Dminecraft.client.jar=${primaryJar}`
-  );
 
   // Version-provided JVM arguments, or the vanilla defaults for old formats.
   const jvmArguments = version.arguments?.jvm ?? defaultJvmArguments();
@@ -186,8 +194,16 @@ export function buildLaunchCommand(
     argv.push(...parseArguments(defaultGameArguments(), placeholders, features));
   }
 
-  // Server join: quick play on modern versions, --server/--port otherwise.
-  if (options.server !== undefined) {
+  // Quick play: direct join / world open on modern versions, --server on old.
+  if (options.quickPlay === 'singleplayer' && options.quickPlayWorld !== undefined) {
+    if (supportsQuickPlay(version)) {
+      argv.push('--quickPlaySingleplayer', options.quickPlayWorld);
+    }
+  } else if (options.quickPlay === 'realms') {
+    if (supportsQuickPlay(version)) {
+      argv.push('--quickPlayRealms');
+    }
+  } else if (options.server !== undefined) {
     const { host, port } = parseServerAddress(options.server);
     if (supportsQuickPlay(version)) {
       argv.push('--quickPlayMultiplayer', port === undefined ? host : `${host}:${port}`);
