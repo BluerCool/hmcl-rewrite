@@ -2,9 +2,10 @@
  * Modpack installation for local `.zip`/`.mrpack` archives.
  *
  * Supports the Modrinth `.mrpack` format (ModrinthIndex) and CurseForge
- * modpack zips (manifest.json). External mod files are downloaded from the
- * pack's advertised CDN; CurseForge files need their download service, which
- * requires credentials we do not ship, so those are reported instead.
+ * modpack zips (manifest.json). Modrinth files come from the pack's CDN;
+ * CurseForge files are pinned as `{projectID, fileID}` pairs, resolved to
+ * no-auth Edge CDN links via the public cfwidget mirror and downloaded into
+ * the instance's `mods/` folder.
  *
  * Modpack installs always enable version isolation so saves/configs/mods stay
  * inside the instance root (matching HMCL's behavior for new instances).
@@ -16,6 +17,7 @@ import { type DownloadEntry, type DownloadProgress, Downloader } from '../downlo
 import type { DownloadProvider } from '../download/mirrors.js';
 import type { GameRepository } from '../game/repository.js';
 import { writeInstanceSettings } from '../game/instance-settings.js';
+import { curseForgeDirectUrl, resolveCurseForgeFiles } from './curseforge.js';
 import { fetchFabricLoaders, installFabricVersion } from '../modloaders/fabric.js';
 import { fetchForgeBuilds, installForgeVersion } from '../modloaders/forge.js';
 import { fetchNeoForgeBuilds, installNeoForgeVersion } from '../modloaders/neoforge.js';
@@ -175,6 +177,7 @@ async function installModrinthMrpack(
   if (downloads.length > 0) await downloader.downloadAll(downloads);
 
   await extractOverrides(repo, instanceName, entries, 'overrides', options.onLine);
+  await extractOverrides(repo, instanceName, entries, 'client-overrides', options.onLine);
   return loaderVersion;
 }
 
@@ -191,13 +194,37 @@ async function installCurseForgeZip(
     repo, provider, mcVersion, loaderFromCurse(manifest.minecraft.modLoaders), options
   );
 
-  // CurseForge mod files require the CurseForge download service (credentials);
-  // install the rest of the pack and report the gap honestly.
-  if (manifest.files.length > 0) {
+  // Resolve each pinned file through the public mirror and download it into
+  // the instance's mods/ folder. Unresolvable entries are reported and
+  // skipped instead of failing the whole install.
+  const infos = await resolveCurseForgeFiles(manifest.files);
+  const downloads: DownloadEntry[] = [];
+  let unresolved = 0;
+  for (let index = 0; index < manifest.files.length; index++) {
+    const info = infos[index];
+    if (info === undefined) {
+      unresolved++;
+      continue;
+    }
+    downloads.push({
+      url: curseForgeDirectUrl(info.fileID, info.filename),
+      destination: safeJoin(repo.versionRoot(instanceName), `mods/${info.filename}`),
+      sha1: undefined,
+      size: info.fileSize
+    });
+  }
+  if (unresolved > 0) {
     options.onLine?.(
-      `⚠ 整合包包含 ${manifest.files.length} 个 CurseForge 模组文件，` +
-        '当前版本暂不支持自动下载，可稍后前往模组管理手动添加。'
+      `⚠ 有 ${unresolved} 个 CurseForge 模组无法解析下载地址，已跳过，` +
+        '可稍后前往模组管理手动添加。'
     );
+  }
+  if (downloads.length > 0) {
+    await new Downloader({
+      concurrency: provider.concurrency,
+      onProgress: options.onProgress
+    }).downloadAll(downloads);
+    options.onLine?.(`>>> 已下载 ${downloads.length} 个 CurseForge 模组文件`);
   }
 
   await extractOverrides(repo, instanceName, entries, manifest.overrides ?? 'overrides', options.onLine);

@@ -698,12 +698,15 @@ handle('modpack:inspect', async (path: string) => {
 handle('modpack:install-file', async (path: string, instanceName: string) => {
   const launchId = -1;
   try {
-    return await installModpackFile(state.repository(), state.provider(), String(path), String(instanceName), {
-      java: await resolveJava(),
-      onProgress: (p) => broadcast({ kind: 'download-progress', launchId, progress: p }),
-      onLine: (line) => broadcast({ kind: 'output', launchId, line, isError: false })
-    });
+    const installed = await installModpackFile(
+      state.repository(), state.provider(), String(path), String(instanceName), {
+        java: await resolveJava(),
+        onProgress: (p) => broadcast({ kind: 'download-progress', launchId, progress: p }),
+        onLine: (line) => broadcast({ kind: 'output', launchId, line, isError: false })
+      }
+    );
     broadcast({ kind: 'download-settled', launchId, ok: true });
+    return installed;
   } catch (e) {
     broadcast({ kind: 'download-settled', launchId, ok: false, error: String(e) });
     throw e;
@@ -747,8 +750,9 @@ handle('modpack:install-modrinth', async (projectId: string, versionId: string, 
       )
     ]);
 
+    let installed: string;
     try {
-      return await installModpackFile(state.repository(), provider, target, String(instanceName), {
+      installed = await installModpackFile(state.repository(), provider, target, String(instanceName), {
         java: await resolveJava(),
         onProgress: (p) => broadcast({ kind: 'download-progress', launchId, progress: p }),
         onLine: (line) => broadcast({ kind: 'output', launchId, line, isError: false })
@@ -757,6 +761,7 @@ handle('modpack:install-modrinth', async (projectId: string, versionId: string, 
       await rm(tempDir, { recursive: true, force: true });
     }
     broadcast({ kind: 'download-settled', launchId, ok: true });
+    return installed;
   } catch (e) {
     broadcast({ kind: 'download-settled', launchId, ok: false, error: String(e) });
     throw e;
