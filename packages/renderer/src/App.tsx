@@ -478,7 +478,9 @@ export function Shell(): React.JSX.Element | null {
         </div>
       </div>
 <div className="root">
-        {page === 'home' ? (
+        {state.managingId !== undefined ? (
+          <InstanceManagePage state={pageProps} />
+        ) : page === 'home' ? (
           <>
             <aside className="sidebar">
               <div className="sidebar-category">账户</div>
@@ -600,7 +602,6 @@ export function Shell(): React.JSX.Element | null {
           </div>
         )}
       </div>
-      {state.managingId !== undefined && <InstanceManagePage state={pageProps} />}
       {dragging && (
         <div className="drag-overlay">
           <div className="drag-overlay-inner">
