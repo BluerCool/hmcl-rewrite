@@ -132,13 +132,24 @@ export function useLauncherState() {
   const finishTimer = useRef<number | undefined>(undefined);
   const lastDownloadEvent = useRef<number>(0);
 
-  const refreshInstalled = async (): Promise<void> => {
+  // Keep the latest settings readable from refreshInstalled even before the
+  // settings state has propagated to the current render's closure.
+  const settingsRef = useRef<SettingsDto | undefined>(undefined);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  const refreshInstalled = async (preferredSettings?: SettingsDto): Promise<void> => {
     const versions = await hmcl().listInstalledVersions();
     setInstalled(versions);
+    // Stale bootstrapping closures read settings before the state propagates;
+    // the caller passes the just-loaded settings on first run.
+    const restored =
+      (preferredSettings ?? settingsRef.current)?.lastLaunchedId ??
+      (preferredSettings ?? settingsRef.current)?.selectedInstanceId;
     setCurrentId((current) => {
-      const fromSettings = settings?.selectedInstanceId;
-      if (fromSettings && versions.some((v) => v.id === fromSettings)) {
-        return fromSettings;
+      if (restored !== undefined && versions.some((v) => v.id === restored)) {
+        return restored;
       }
       return versions.some((version) => version.id === current) ? current : versions[0]?.id;
     });
@@ -273,7 +284,7 @@ export function Shell(): React.JSX.Element | null {
         const loaded = await hmcl().getSettings();
         if (disposed) return;
         state.setSettings(loaded);
-        await Promise.all([state.refreshInstalled(), state.refreshAccounts()]);
+        await Promise.all([state.refreshInstalled(loaded), state.refreshAccounts()]);
       } catch (error) {
         state.appendLog({ text: `初始化失败: ${String(error)}`, isError: true });
       }
@@ -999,7 +1010,7 @@ interface StateHook {
   editingInstanceId: string | undefined;
   setEditingInstanceId: (id: string | undefined) => void;
   maximized: boolean;
-  refreshInstalled: () => Promise<void>;
+  refreshInstalled: (preferredSettings?: SettingsDto) => Promise<void>;
   refreshAccounts: () => Promise<void>;
   appendLog: (line: LogLine) => void;
   setPage: (page: PageId) => void;

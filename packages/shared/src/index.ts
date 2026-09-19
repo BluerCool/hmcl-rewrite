@@ -160,6 +160,8 @@ export interface SettingsDto {
   launcherBackgroundTransparent: boolean | undefined;
   /** The currently selected game instance id; restored on startup. */
   selectedInstanceId: string | undefined;
+  /** The most recently launched game instance id; preferred on startup. */
+  lastLaunchedId: string | undefined;
   /** Download settings */
   fileDownloadSource: 'mojang' | 'bmclapi' | undefined;
   defaultAddonSource: 'modrinth' | 'curseforge' | undefined;

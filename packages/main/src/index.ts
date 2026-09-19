@@ -85,6 +85,7 @@ const DEFAULT_SETTINGS: SettingsDto = {
   updateChannel: undefined as 'stable' | 'dev' | undefined,
   launcherBackgroundTransparent: undefined as boolean | undefined,
   selectedInstanceId: undefined as string | undefined,
+  lastLaunchedId: undefined as string | undefined,
   fileDownloadSource: undefined,
   defaultAddonSource: undefined,
   commonDirectory: undefined,
@@ -453,6 +454,10 @@ handle('launch:start', async (versionId: string) => {
   const launchId = state.allocateLaunchId();
   const abort = new AbortController();
   state.runningLaunches.set(launchId, abort);
+
+  // Remember the launched instance so the next app open defaults to it.
+  state.settings.lastLaunchedId = versionId;
+  void state.saveSettings();
 
   const repo = state.repository();
   const resolved: ResolvedVersion = await repo.resolveInstalledVersion(versionId);
