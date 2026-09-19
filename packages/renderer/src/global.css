@@ -1359,7 +1359,7 @@ body {
 /* Installer sheet (HMCL InstallersPage wizard step) */
 
 .sheet-backdrop {
-  position: absolute;
+  position: fixed;
   inset: 0;
   background: rgba(27, 27, 33, 0.45);
   display: grid;
@@ -2129,16 +2129,32 @@ body {
 }
 
 /* Translucent surfaces when a background is active so it shows through. */
-html.has-bg .sidebar {
+html.has-bg body {
+  background: transparent;
+}
+
+html.has-bg .decorated-page,
+html.has-bg .instance-settings-page {
+  background: transparent;
+}
+
+html.has-bg .sidebar,
+html.has-bg .dl-sidebar {
   background-color: color-mix(in srgb, var(--monet-surface-container-low) 82%, transparent);
 }
 
-html.has-bg .card {
-  background-color: color-mix(in srgb, var(--monet-surface-container-lowest) 82%, transparent);
+html.has-bg .nav-bar {
+  background-color: color-mix(in srgb, var(--monet-surface-container-low) 82%, transparent);
 }
 
-html.has-bg body {
-  background: transparent;
+html.has-bg .titlebar {
+  background-color: color-mix(in srgb, var(--monet-primary-container) 82%, transparent);
+}
+
+html.has-bg .card,
+html.has-bg .settings-card,
+html.has-bg .dl-list-card {
+  background-color: color-mix(in srgb, var(--monet-surface-container-lowest) 82%, transparent);
 }
 
 /* Translucent OS window (HMCL 透明背景): clear the opaque body paint so the
@@ -2153,8 +2169,18 @@ html.transparent-bg .dl-sidebar {
   background-color: color-mix(in srgb, var(--monet-surface-container-low) 78%, transparent);
 }
 
+html.transparent-bg .nav-bar {
+  background-color: color-mix(in srgb, var(--monet-surface-container-low) 78%, transparent);
+}
+
+html.transparent-bg .decorated-page,
+html.transparent-bg .instance-settings-page {
+  background: transparent;
+}
+
 html.transparent-bg .card,
-html.transparent-bg .settings-card {
+html.transparent-bg .settings-card,
+html.transparent-bg .dl-list-card {
   background-color: color-mix(in srgb, var(--monet-surface-container-lowest) 78%, transparent);
 }
 
