@@ -1297,18 +1297,34 @@ function InstanceSettingsPage({
 }): React.JSX.Element {
   const [settings, setSettings] = useState<InstanceSettingsDto | undefined>(undefined);
   const [systemMemory, setSystemMemory] = useState<number | undefined>(undefined);
+  const [quickMode, setQuickMode] = useState<'none' | 'multiplayer'>('none');
 
   useEffect(() => {
-    void hmcl().getInstanceSettings(instanceId).then(setSettings);
+    void hmcl().getInstanceSettings(instanceId).then((s) => {
+      setSettings(s);
+      setQuickMode(s.server !== undefined && s.server !== '' ? 'multiplayer' : 'none');
+    });
     void hmcl().getSystemMemory().then(setSystemMemory);
   }, [instanceId]);
 
   const save = (patch: Partial<InstanceSettingsDto>): void => {
-    // Filter out undefined values (exactOptionalPropertyTypes disallows undefined on optional props)
-    const filtered = Object.fromEntries(
-      Object.entries(patch).filter(([, v]) => v !== undefined)
-    ) as Partial<InstanceSettingsDto>;
-    const next: InstanceSettingsDto = { ...settings, ...filtered } as InstanceSettingsDto;
+    // Undefined patch values clear the stored key instead of being dropped,
+    // so fields can fall back to their inherited defaults.
+    const next: InstanceSettingsDto = { ...settings } as InstanceSettingsDto;
+    for (const entry of Object.entries(patch)) {
+      if (entry[1] === undefined) {
+        delete (next as Record<string, unknown>)[entry[0]];
+      } else {
+        (next as Record<string, unknown>)[entry[0]] = entry[1];
+      }
+    }
+    setSettings(next);
+    void hmcl().saveInstanceSettings(instanceId, next);
+  };
+
+  const clearSetting = (key: keyof InstanceSettingsDto): void => {
+    const next: InstanceSettingsDto = { ...settings } as InstanceSettingsDto;
+    delete (next as Record<string, unknown>)[key as string];
     setSettings(next);
     void hmcl().saveInstanceSettings(instanceId, next);
   };
@@ -1318,7 +1334,7 @@ function InstanceSettingsPage({
     if (path !== undefined) save({ javaExecutable: path });
   };
 
-  const clearJava = (): void => save({});
+  const clearJava = (): void => clearSetting('javaExecutable');
 
   if (settings === undefined) {
     return (
@@ -1349,25 +1365,34 @@ function InstanceSettingsPage({
 
       <div className="settings-page-body">
         <div className="settings-section-card">
-          <div className="settings-section-title">基本</div>
+          <div className="settings-section-title">基本设置</div>
 
           <div className="settings-row">
             <div className="settings-row-label">
               <span>版本隔离</span>
-              <span className="settings-row-subtitle">将实例的存档与配置独立存放</span>
+              <span className="settings-row-subtitle">启用后，当前实例将使用独立的游戏运行路径设置</span>
             </div>
             <select
-              value={settings.gameDirType ?? 'global'}
-              onChange={(e) => save({ gameDirType: e.target.value as 'global' | 'instance' })}
+              value={settings.gameDirType ?? 'inherit'}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value === 'inherit') clearSetting('gameDirType');
+                else save({ gameDirType: value as 'global' | 'instance' });
+              }}
             >
+              <option value="inherit">默认 (继承全局设置)</option>
               <option value="global">全局</option>
               <option value="instance">隔离</option>
             </select>
           </div>
+        </div>
+
+        <div className="settings-section-card">
+          <div className="settings-section-title">游戏设置</div>
 
           <div className="settings-row">
             <div className="settings-row-label">
-              <span>Java 运行时</span>
+              <span>游戏 Java</span>
               <span className="settings-row-subtitle">选择自动检测或指定 JRE 路径</span>
             </div>
             <div className="settings-row-control java-runtime-control">
@@ -1402,13 +1427,9 @@ function InstanceSettingsPage({
               )}
             </div>
           </div>
-        </div>
-
-        <div className="settings-section-card">
-          <div className="settings-section-title">游戏</div>
 
           <div className="settings-subsection">
-            <div className="settings-subsection-title">内存</div>
+            <div className="settings-subsection-title">游戏内存</div>
 
             <div className="settings-row">
               <div className="settings-row-label">
@@ -1423,7 +1444,7 @@ function InstanceSettingsPage({
                     checked={settings.autoMemory !== false}
                     onChange={(e) => save({ autoMemory: e.target.checked })}
                   />
-                  <span>自动分配</span>
+                  <span>自动分配内存</span>
                 </label>
                 <label className="radio-option">
                   <input
@@ -1432,7 +1453,7 @@ function InstanceSettingsPage({
                     checked={settings.autoMemory === false}
                     onChange={(e) => save({ autoMemory: e.target.checked })}
                   />
-                  <span>手动分配</span>
+                  <span>手动选择内存</span>
                 </label>
               </div>
             </div>
@@ -1441,7 +1462,7 @@ function InstanceSettingsPage({
               <>
                 <div className="settings-row">
                   <div className="settings-row-label">
-                    <span>最小内存</span>
+                    <span>最低内存分配</span>
                     <span className="settings-row-subtitle">初始堆大小 (MiB)</span>
                   </div>
                   <div className="settings-row-control memory-input">
@@ -1500,7 +1521,7 @@ function InstanceSettingsPage({
           </div>
 
           <div className="settings-subsection">
-            <div className="settings-subsection-title">窗口</div>
+            <div className="settings-subsection-title">游戏窗口类型</div>
 
             <div className="settings-row">
               <div className="settings-row-label">
@@ -1508,72 +1529,110 @@ function InstanceSettingsPage({
                 <span className="settings-row-subtitle">选择启动时的窗口状态</span>
               </div>
               <select
-                value={settings.fullscreen ? 'fullscreen' : (settings.width && settings.height ? 'windowed' : 'auto')}
+                value={settings.fullscreen ? 'fullscreen' : (settings.width && settings.height ? 'windowed' : 'default')}
                 onChange={(e) => {
                   const v = e.target.value;
                   if (v === 'fullscreen') save({ fullscreen: true });
                   else if (v === 'windowed') save({ fullscreen: false, width: 854, height: 480 });
-                  else save({ fullscreen: false });
+                  else {
+                    save({ fullscreen: false });
+                    clearSetting('width');
+                    clearSetting('height');
+                  }
                 }}
               >
-                <option value="auto">自动 (使用上次设置)</option>
+                <option value="default">默认</option>
                 <option value="windowed">窗口化</option>
                 <option value="fullscreen">全屏</option>
               </select>
             </div>
 
-            {!settings.fullscreen && (
+            {!settings.fullscreen && settings.width && settings.height && (
               <div className="settings-row">
                 <div className="settings-row-label">
                   <span>分辨率</span>
                   <span className="settings-row-subtitle">窗口化时的初始大小</span>
                 </div>
                 <div className="settings-row-control resolution-input">
-<input
-                      type="number"
-                      value={settings.width ?? 854}
-                      min={320}
-                      max={7680}
-                      onChange={(e) => {
-                        const v = Number(e.target.value);
-                        save(v > 0 ? { width: v } : {});
-                      }}
-                    />
+                  <input
+                    type="number"
+                    value={settings.width}
+                    min={320}
+                    max={7680}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      save(v > 0 ? { width: v } : {});
+                    }}
+                  />
                   <span>×</span>
-<input
-                      type="number"
-                      value={settings.height ?? 480}
-                      min={240}
-                      max={4320}
-                      onChange={(e) => {
-                        const v = Number(e.target.value);
-                        save(v > 0 ? { height: v } : {});
-                      }}
-                    />
+                  <input
+                    type="number"
+                    value={settings.height}
+                    min={240}
+                    max={4320}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      save(v > 0 ? { height: v } : {});
+                    }}
+                  />
                 </div>
               </div>
             )}
           </div>
 
           <div className="settings-subsection">
-            <div className="settings-subsection-title">快速开始</div>
+            <div className="settings-subsection-title">快速游玩</div>
 
             <div className="settings-row">
               <div className="settings-row-label">
-                <span>启动后直接加入</span>
-                <span className="settings-row-subtitle">支持服务器地址 (host:port)</span>
+                <span>快速游玩选项</span>
+                <span className="settings-row-subtitle">启动游戏后直接进入指定服务器或世界</span>
               </div>
-              <input
-                type="text"
-                value={settings.server ?? ''}
-                placeholder="mc.example.com:25565"
-                onChange={(e) => save(e.target.value ? { server: e.target.value } : {})}
-              />
+              <select
+                value={quickMode}
+                onChange={(e) => {
+                  const value = e.target.value as 'none' | 'multiplayer';
+                  setQuickMode(value);
+                  if (value === 'none') clearSetting('server');
+                }}
+              >
+                <option value="none">无</option>
+                <option value="multiplayer">多人联机</option>
+              </select>
             </div>
+
+            {quickMode === 'multiplayer' && (
+              <div className="settings-row">
+                <div className="settings-row-label">
+                  <span>服务器地址</span>
+                  <span className="settings-row-subtitle">支持服务器地址 (host:port)</span>
+                </div>
+                <input
+                  type="text"
+                  value={settings.server ?? ''}
+                  placeholder="mc.example.com:25565"
+                  onChange={(e) => save(e.target.value ? { server: e.target.value } : {})}
+                />
+              </div>
+            )}
           </div>
 
           <div className="settings-subsection">
-            <div className="settings-subsection-title">高级启动选项</div>
+            <div className="settings-subsection-title">高级选项</div>
+
+            <div className="settings-row">
+              <div className="settings-row-label">
+                <span>游戏运行路径</span>
+                <span className="settings-row-subtitle">当前实例启动时的游戏路径策略</span>
+              </div>
+              <select
+                value={settings.gameDirType === 'instance' ? 'instance' : 'default'}
+                disabled
+              >
+                <option value="default">默认 (".minecraft/")</option>
+                <option value="instance">各实例独立 (存放在 ".minecraft/versions/{instanceId}/"，除 assets、libraries 外)</option>
+              </select>
+            </div>
 
             <div className="settings-row">
               <div className="settings-row-label">
@@ -1591,7 +1650,7 @@ function InstanceSettingsPage({
             <div className="settings-row">
               <div className="settings-row-label">
                 <span>环境变量</span>
-                <span className="settings-row-subtitle">KEY=VALUE;KEY2=VALUE2 (分号或换行分隔)</span>
+                <span className="settings-row-subtitle">传递给游戏进程的键值对</span>
               </div>
               <textarea
                 value={settings.environmentVariables ?? ''}
@@ -1604,7 +1663,7 @@ function InstanceSettingsPage({
             <div className="settings-row">
               <div className="settings-row-label">
                 <span>进程优先级</span>
-                <span className="settings-row-subtitle">调度优先级 (POSIX)</span>
+                <span className="settings-row-subtitle">调度优先级</span>
               </div>
               <select
                 value={settings.processPriority ?? 'normal'}
@@ -1613,10 +1672,10 @@ function InstanceSettingsPage({
                   save({ processPriority: val as InstanceSettingsDto['processPriority'] } as Partial<InstanceSettingsDto>);
                 }}
               >
-                <option value="normal">标准</option>
-                <option value="above_normal">高于标准</option>
+                <option value="normal">中</option>
+                <option value="above_normal">较高</option>
                 <option value="high">高</option>
-                <option value="below_normal">低于标准</option>
+                <option value="below_normal">较低</option>
                 <option value="low">低</option>
               </select>
             </div>
@@ -1624,52 +1683,48 @@ function InstanceSettingsPage({
         </div>
 
         <div className="settings-section-card">
-          <div className="settings-section-title">高级</div>
+          <div className="settings-section-title">Java 虚拟机设置</div>
 
-          <div className="settings-subsection">
-            <div className="settings-subsection-title">JVM</div>
-
-            <div className="settings-row">
-              <div className="settings-row-label">
-                <span>不使用优化 JVM 参数</span>
-                <span className="settings-row-subtitle">禁用 G1GC 调优等自动生成的优化参数</span>
-              </div>
-              <input
-                type="checkbox"
-                checked={settings.noOptimizingJVMArgs === true}
-                onChange={(e) => save({ noOptimizingJVMArgs: e.target.checked })}
-              />
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <span>不自动添加 Java 虚拟机优化参数</span>
+              <span className="settings-row-subtitle">不自动向启动命令附加 G1GC 等优化参数</span>
             </div>
-
-            <div className="settings-row">
-              <div className="settings-row-label">
-                <span>JVM 参数</span>
-                <span className="settings-row-subtitle">额外的 JVM 参数 (与全局设置合并)</span>
-              </div>
-              <input
-                type="text"
-                value={settings.javaArgs ?? ''}
-                placeholder="-Xmx2g -Xms512m -XX:+UseG1GC"
-                onChange={(e) => save(e.target.value ? { javaArgs: e.target.value } : {})}
-              />
-            </div>
+            <input
+              type="checkbox"
+              checked={settings.noOptimizingJVMArgs === true}
+              onChange={(e) => save({ noOptimizingJVMArgs: e.target.checked })}
+            />
           </div>
 
-          <div className="settings-subsection">
-            <div className="settings-subsection-title">自定义命令</div>
-
-            <div className="settings-row">
-              <div className="settings-row-label">
-                <span>包装启动器</span>
-                <span className="settings-row-subtitle">启动前的包装命令，如 optirun, primusrun</span>
-              </div>
-              <input
-                type="text"
-                value={settings.wrapper ?? ''}
-                placeholder="optirun"
-                onChange={(e) => save(e.target.value ? { wrapper: e.target.value } : {})}
-              />
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <span>Java 虚拟机参数</span>
+              <span className="settings-row-subtitle">额外的 JVM 参数 (与全局设置合并)</span>
             </div>
+            <input
+              type="text"
+              value={settings.javaArgs ?? ''}
+              placeholder="-Xmx2g -Xms512m -XX:+UseG1GC"
+              onChange={(e) => save(e.target.value ? { javaArgs: e.target.value } : {})}
+            />
+          </div>
+        </div>
+
+        <div className="settings-section-card">
+          <div className="settings-section-title">自定义命令</div>
+
+          <div className="settings-row">
+            <div className="settings-row-label">
+              <span>包装命令</span>
+              <span className="settings-row-subtitle">如填写"optirun"后，启动命令将从"java ..."变为"optirun java ..."</span>
+            </div>
+            <input
+              type="text"
+              value={settings.wrapper ?? ''}
+              placeholder="optirun"
+              onChange={(e) => save(e.target.value ? { wrapper: e.target.value } : {})}
+            />
           </div>
         </div>
       </div>
