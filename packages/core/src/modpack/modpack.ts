@@ -30,7 +30,9 @@ export interface ModrinthIndex {
   versionId: string;
   name: string;
   files: ModrinthIndexFile[];
-  dependencies: { minecraft: string } & Partial<Record<'fabric' | 'forge' | 'neoforge' | 'quilt', string>>;
+  dependencies: { minecraft: string } & Partial<
+    Record<'fabric-loader' | 'forge' | 'neoforge' | 'quilt-loader', string>
+  >;
 }
 
 export interface ModrinthIndexFile {
@@ -272,8 +274,13 @@ async function installBaseAndLoader(
 /** Maps the mrpack loader dependency to an installable spec. */
 export function loaderFromModrinth(index: ModrinthIndex): ModpackLoaderSpec | undefined {
   const dependencies = index.dependencies;
-  for (const kind of ['fabric', 'forge', 'neoforge', 'quilt'] as const) {
-    const version = dependencies[kind];
+  for (const [key, kind] of [
+    ['fabric-loader', 'fabric'],
+    ['forge', 'forge'],
+    ['neoforge', 'neoforge'],
+    ['quilt-loader', 'quilt']
+  ] as const) {
+    const version = dependencies[key];
     if (version !== undefined) return { kind, version };
   }
   return undefined;

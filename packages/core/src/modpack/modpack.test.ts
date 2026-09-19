@@ -4,7 +4,53 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readFile, rm } from 'node:fs/promises';
 import { GameRepository } from '../game/repository.js';
-import { extractOverrides, safeJoin } from './modpack.js';
+import { extractOverrides, loaderFromModrinth, safeJoin } from './modpack.js';
+
+it('loaderFromModrinth reads fabric-loader / quilt-loader dependency keys', () => {
+  expect(
+    loaderFromModrinth({
+      formatVersion: 1,
+      game: 'minecraft',
+      versionId: '1.5.4+mc1.21.1',
+      name: 'uku',
+      files: [],
+      dependencies: { minecraft: '1.21.1', 'fabric-loader': '0.16.3' }
+    })
+  ).toEqual({ kind: 'fabric', version: '0.16.3' });
+
+  expect(
+    loaderFromModrinth({
+      formatVersion: 1,
+      game: 'minecraft',
+      versionId: 'x',
+      name: 'x',
+      files: [],
+      dependencies: { minecraft: '1.21.1', 'quilt-loader': '0.27.0' }
+    })
+  ).toEqual({ kind: 'quilt', version: '0.27.0' });
+
+  expect(
+    loaderFromModrinth({
+      formatVersion: 1,
+      game: 'minecraft',
+      versionId: 'x',
+      name: 'x',
+      files: [],
+      dependencies: { minecraft: '1.21.1', forge: '52.0.1' }
+    })
+  ).toEqual({ kind: 'forge', version: '52.0.1' });
+
+  expect(
+    loaderFromModrinth({
+      formatVersion: 1,
+      game: 'minecraft',
+      versionId: 'x',
+      name: 'x',
+      files: [],
+      dependencies: { minecraft: '1.21.1' }
+    })
+  ).toBeUndefined();
+});
 
 it('extractOverrides extracts both overrides and client-overrides independently', async () => {
   const repo = new GameRepository(mkdtempSync(join(tmpdir(), 'hmcl-modpack-')));
