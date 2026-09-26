@@ -391,9 +391,13 @@ handle('loaders:install', async (kind: LoaderKind, mcVersion: string, loaderId: 
     await new Launcher(repo, provider).ensureGameFiles(resolved, (progress) =>
       broadcast({ kind: 'download-progress', launchId, progress })
     );
+    // Loader installs announce a stage but never cleared it, so the footer kept
+    // saying 正在安装 Forge long after the install was done.
+    broadcast({ kind: 'stage', launchId, stage: 'idle' });
     broadcast({ kind: 'download-settled', launchId, ok: true });
     return createdId;
   } catch (e) {
+    broadcast({ kind: 'stage', launchId, stage: 'idle' });
     broadcast({ kind: 'download-settled', launchId, ok: false, error: String(e) });
     throw e;
   }

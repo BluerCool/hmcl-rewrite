@@ -351,8 +351,12 @@ const STAGE_LABELS: Record<string, string> = {
   'installing-mods': '正在安装模组',
   'installing-resourcepacks': '正在安装资源包',
   'installing-shaderpacks': '正在安装光影',
+  'installing-forge': '正在安装 Forge',
+  'installing-neoforge': '正在安装 NeoForge',
+  'installing-optifine': '正在安装 OptiFine',
   starting: '正在启动',
-  running: '游戏运行中'
+  running: '游戏运行中',
+  exited: '游戏已退出'
 };
 
 /**
