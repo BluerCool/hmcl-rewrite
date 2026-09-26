@@ -371,6 +371,20 @@ export function Shell(): React.JSX.Element | null {
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
 
+  // The 模组/资源包/光影 install target, mirroring HMCL's page-local combo
+  // (DownloadListPage#selectedInstance). It lives up here because the page
+  // stage is keyed by the open project: opening a project's version list — or
+  // coming back from it — remounts the download page, and a target held down
+  // there would silently revert to the launcher's own instance mid-install.
+  // It is also deliberately not the launcher's selection: writing through to
+  // setCurrentId rewrote `selectedInstanceId` in the settings and changed what
+  // the home page would launch.
+  const [pickedAddonTarget, setPickedAddonTarget] = useState<AddonTarget | undefined>(undefined);
+  useEffect(() => {
+    setPickedAddonTarget(undefined);
+  }, [state.currentId]);
+  const addonTarget = pickedAddonTarget ?? addonTargetForInstance(state.currentId);
+
   // Track dragenter/dragleave depth so host children don't flicker the overlay.
   const onDragEnter = (event: React.DragEvent): void => {
     event.preventDefault();
@@ -698,6 +712,8 @@ export function Shell(): React.JSX.Element | null {
                   <DownloadPage
                     state={pageProps}
                     detail={downloadDetail}
+                    addonTarget={addonTarget}
+                    onAddonTargetChange={setPickedAddonTarget}
                     onOpenDetail={setDownloadDetail}
                     onCloseDetail={() => setDownloadDetail(undefined)}
                   />
@@ -2540,10 +2556,7 @@ function InstallersTab({
     );
   }
 
-  const installedMarkers = new Set<string>();
-  for (const key of Object.keys(KIND_LABELS) as LoaderKind[]) {
-    if (instanceId.toLowerCase().includes(key)) installedMarkers.add(key);
-  }
+  const installedMarkers = new Set<string>(detectInstanceLoaders(instanceId));
 
   return (
     <div className="settings-scroll">
@@ -2670,6 +2683,18 @@ const KIND_LABELS: Record<LoaderKind, string> = {
   optifine: 'OptiFine'
 };
 
+/**
+ * Loader names detectable from an instance id.
+ *
+ * Nothing in the version manifest records them, so this is the same name
+ * heuristic 自动安装 uses to decide which 安装 buttons to disable. It is enough
+ * to tell a Fabric instance from a Forge one and nothing more.
+ */
+function detectInstanceLoaders(instanceId: string): string[] {
+  const lower = instanceId.toLowerCase();
+  return (Object.keys(KIND_LABELS) as LoaderKind[]).filter((kind) => lower.includes(kind));
+}
+
 // ----- Installer components (mirrors HMCL's InstallersPage DEFAULT_INSTALLERS) -----
 
 type InstallerComponentId =
@@ -2756,6 +2781,34 @@ function installersFor(gameId: string): InstallerComponentId[] {
 type DlTab = 'game' | 'modpack' | 'mod' | 'resourcepack' | 'shader' | 'world';
 type VersionFilter = 'all' | 'release' | 'snapshots' | 'april_fools' | 'old';
 type VersionKind = 'release' | 'snapshot' | 'april_fools' | 'old';
+
+/**
+ * Where a 模组/资源包/光影 gets installed, mirroring the 实例 combo HMCL puts on
+ * the first row of its download search card.
+ *
+ * `default` is the shared `.minecraft` root — the directory every
+ * non-version-isolated instance actually runs in, and the only target that
+ * needs no instance at all. The choice is page-local on purpose: picking a
+ * target here must not change which instance the launcher launches.
+ */
+type AddonTarget = { kind: 'default' } | { kind: 'instance'; id: string };
+
+const DEFAULT_ADDON_TARGET: AddonTarget = { kind: 'default' };
+
+/** The target a global selection implies: the instance itself, or the root. */
+function addonTargetForInstance(id: string | undefined): AddonTarget {
+  return id === undefined ? DEFAULT_ADDON_TARGET : { kind: 'instance', id };
+}
+
+/** Text shown for a target, both in the combo and next to the install button. */
+function addonTargetLabel(target: AddonTarget): string {
+  return target.kind === 'default' ? '默认（.minecraft 根目录）' : target.id;
+}
+
+/** Select option value for a target; the empty string is the default entry. */
+function addonTargetOptionValue(target: AddonTarget): string {
+  return target.kind === 'default' ? '' : target.id;
+}
 
 const FILTER_LABELS: Record<VersionFilter, string> = {
   all: '全部',
@@ -2852,11 +2905,15 @@ type StateHookProps = { state: StateHook };
 function DownloadPage({
   state,
   detail,
+  addonTarget,
+  onAddonTargetChange,
   onOpenDetail,
   onCloseDetail
 }: {
   state: StateHook;
   detail: ModrinthProjectDto | undefined;
+  addonTarget: AddonTarget;
+  onAddonTargetChange: (target: AddonTarget | undefined) => void;
   onOpenDetail: (project: ModrinthProjectDto) => void;
   onCloseDetail: () => void;
 }): React.JSX.Element {
@@ -2887,6 +2944,7 @@ function DownloadPage({
         <AddonDetailPage
           state={state}
           project={detail}
+          target={addonTarget}
           onClose={onCloseDetail}
           onInstallModpack={(version) =>
             setInstall({ project: detail, version })
@@ -2924,7 +2982,13 @@ function DownloadPage({
         ) : tab === 'world' ? (
           <UnsupportedCategory state={state} />
         ) : (
-          <AddonTab state={state} type={tab} onOpenDetail={onOpenDetail} />
+          <AddonTab
+            state={state}
+            type={tab}
+            target={addonTarget}
+            onTargetChange={onAddonTargetChange}
+            onOpenDetail={onOpenDetail}
+          />
         )}
       </main>
     </div>
@@ -3016,15 +3080,64 @@ function compareAddonGameVersions(a: string, b: string): number {
   return compareGameVersions(b, a);
 }
 
+/** What the 「推荐」 group matches an addon version against. */
+interface AddonRecommendation {
+  /** Minecraft version the target instance runs. */
+  gameVersion: string;
+  /** Loaders detected on the target instance; empty for vanilla. */
+  loaders: string[];
+  /** Only mods have to match the loaders — packs and shaders list minecraft. */
+  checkLoaders: boolean;
+}
+
+/**
+ * Resolves the target instance into the shape the version list groups by.
+ * Returns undefined for the 默认 target, which recommends nothing.
+ */
+function recommendationFor(
+  target: AddonTarget,
+  kind: DlAddonKind,
+  installed: readonly InstalledVersionDto[]
+): AddonRecommendation | undefined {
+  if (target.kind !== 'instance') return undefined;
+  const instance = installed.find((entry) => entry.id === target.id);
+  if (instance === undefined) return undefined;
+  return {
+    gameVersion: instance.gameVersion,
+    // OptiFine is a client-side patch, not a Modrinth loader: keeping it in
+    // the list would leave every version unmatched and empty the group.
+    loaders: detectInstanceLoaders(target.id).filter((loader) => loader !== 'optifine'),
+    checkLoaders: kind === 'mod'
+  };
+}
+
+/**
+ * Whether a version is worth recommending for the target instance.
+ *
+ * HMCL only recommends a mod whose loaders overlap the instance's, so a
+ * Fabric-only mod is not pushed at a Forge game. Our loader list is an id-name
+ * heuristic, so an instance we cannot read a loader from is matched on the
+ * game version alone — refusing to recommend there would silently empty the
+ * group for every vanilla instance.
+ */
+function isRecommendedVersion(
+  version: ModrinthVersionDto,
+  recommend: AddonRecommendation
+): boolean {
+  if (!version.gameVersions.includes(recommend.gameVersion)) return false;
+  if (!recommend.checkLoaders || recommend.loaders.length === 0) return true;
+  return version.loaders.some((loader) => recommend.loaders.includes(loader));
+}
+
 /**
  * Groups addon versions the way HMCL's DownloadPage skin does: an optional
- * 「推荐」 list for the current instance's game version, then per-Minecraft
+ * 「推荐」 list for the target instance's game version, then per-Minecraft
  * sublists with releases first and snapshots after.
  */
 function buildVersionGroups(
   versions: ModrinthVersionDto[],
   remote: RemoteVersionDto[],
-  currentInstanceGameVersion: string | undefined
+  recommend: AddonRecommendation | undefined
 ): AddonVersionGroup[] {
   const released = new Set<string>();
   const snapshots = new Set<string>();
@@ -3041,14 +3154,21 @@ function buildVersionGroups(
     entry.gameVersions.find((game) => snapshots.has(game)) ??
     entry.gameVersions[0];
 
-  // Versions supporting the current instance's Minecraft version → 推荐.
+  const byDate = (a: ModrinthVersionDto, b: ModrinthVersionDto): number =>
+    (b.datePublished ?? '').localeCompare(a.datePublished ?? '');
+
+  // Versions usable on the target instance → 推荐.
   const groups: AddonVersionGroup[] = [];
-  if (currentInstanceGameVersion !== undefined) {
+  if (recommend !== undefined) {
     const recommended = versions
-      .filter((entry) => entry.gameVersions.includes(currentInstanceGameVersion))
-      .sort((a, b) => (b.datePublished ?? '').localeCompare(a.datePublished ?? ''));
+      .filter((entry) => isRecommendedVersion(entry, recommend))
+      .sort(byDate);
     if (recommended.length > 0) {
-      groups.push({ title: `推荐 (${currentInstanceGameVersion})`, recommend: true, items: recommended });
+      groups.push({
+        title: `推荐版本 - Minecraft ${recommend.gameVersion}`,
+        recommend: true,
+        items: recommended
+      });
     }
   }
 
@@ -3071,8 +3191,6 @@ function buildVersionGroups(
   }
   familyOrder.sort(compareAddonGameVersions);
 
-  const byDate = (a: ModrinthVersionDto, b: ModrinthVersionDto): number =>
-    (b.datePublished ?? '').localeCompare(a.datePublished ?? '');
   for (const parent of familyOrder) {
     const family = families.get(parent)!;
     if (family.release.length > 0) {
@@ -3123,11 +3241,13 @@ function AddonVersionRow({
 function AddonDetailPage({
   state,
   project,
+  target,
   onClose,
   onInstallModpack
 }: {
   state: StateHook;
   project: ModrinthProjectDto;
+  target: AddonTarget;
   onClose: () => void;
   onInstallModpack: (version: ModrinthVersionDto) => void;
 }): React.JSX.Element {
@@ -3170,10 +3290,16 @@ function AddonDetailPage({
     };
   }, [project.slug, project.projectType]);
 
-  const currentInstance = state.installed.find((entry) => entry.id === state.currentId);
+  const kind = project.projectType as DlAddonKind;
+  const targetId = target.kind === 'instance' ? target.id : undefined;
   const groups = useMemo(
-    () => (versions === undefined ? [] : buildVersionGroups(versions, remote, currentInstance?.jar)),
-    [versions, remote, currentInstance?.jar]
+    () =>
+      versions === undefined
+        ? []
+        : // The recommendation is derived inside the memo so its identity never
+          // invalidates it; the target's id is the only part that can change it.
+          buildVersionGroups(versions, remote, recommendationFor(target, kind, state.installed)),
+    [versions, remote, targetId, kind, state.installed]
   );
 
   return (
@@ -3183,6 +3309,7 @@ function AddonDetailPage({
           state={state}
           project={project}
           version={selected}
+          target={target}
           onClose={() => setSelected(undefined)}
           onInstallModpack={onInstallModpack}
         />
@@ -3266,12 +3393,14 @@ function AddonVersionDialog({
   state,
   project,
   version,
+  target,
   onClose,
   onInstallModpack
 }: {
   state: StateHook;
   project: ModrinthProjectDto;
   version: ModrinthVersionDto;
+  target: AddonTarget;
   onClose: () => void;
   onInstallModpack: (version: ModrinthVersionDto) => void;
 }): React.JSX.Element {
@@ -3282,12 +3411,13 @@ function AddonVersionDialog({
   const [installError, setInstallError] = useState<string | undefined>(undefined);
   const kind = project.projectType as DlAddonKind;
   const kindLabel = ADDON_LABELS[kind] ?? '文件';
+  // This dialog is a page away from the combo that picked the target, so it
+  // repeats it here — otherwise the only way to tell where a pack landed is to
+  // notice afterwards that it is missing from the instance you were looking at.
+  const targetLabel = addonTargetLabel(target);
+  const targetInstanceId = target.kind === 'instance' ? target.id : undefined;
 
-  const installIntoInstance = async (): Promise<void> => {
-    if (state.currentId === undefined) {
-      showToast('请先在首页创建或选择一个实例');
-      return;
-    }
+  const installIntoTarget = async (): Promise<void> => {
     if (installing) return;
     const subdir = subdirForAddon(kind);
     setInstalling(true);
@@ -3297,12 +3427,12 @@ function AddonVersionDialog({
       // the "安装失败" note below was written into a component that no longer
       // existed. A failed install therefore reported nothing at all. Stay open
       // until the file has actually landed.
-      await hmcl().downloadAddonFile(state.currentId, subdir, version);
+      await hmcl().downloadAddonFile(targetInstanceId, subdir, version);
       state.appendLog({
-        text: `>>> ${kindLabel}安装完成：${primary?.filename ?? version.name}`,
+        text: `>>> ${kindLabel}安装到 ${targetLabel}：${primary?.filename ?? version.name}`,
         isError: false
       });
-      showToast(`${kindLabel}已安装到 ${state.currentId}`);
+      showToast(`${kindLabel}已安装到 ${targetLabel}`);
       onClose();
     } catch (reason) {
       // Keep the dialog up and put the reason right where the user is looking,
@@ -3357,11 +3487,17 @@ function AddonVersionDialog({
               ))}
             </div>
           )}
+          {!isModpack && (
+            <div className="install-target">
+              <span className="install-target-label">安装到</span>
+              <span className="install-target-value">{targetLabel}</span>
+            </div>
+          )}
         </div>
         {installing && (
           <div className="install-progress">
             <span className="spinner" />
-            正在安装{kindLabel}…
+            正在安装{kindLabel}到 {targetLabel}…
           </div>
         )}
         {installError !== undefined && (
@@ -3386,7 +3522,7 @@ function AddonVersionDialog({
           ) : (
             <button
               className="raised-button"
-              onClick={() => void installIntoInstance()}
+              onClick={() => void installIntoTarget()}
               disabled={installing}
             >
               安装
@@ -3950,7 +4086,40 @@ function localizeCategory(category: { slug: string; name: string }): string {
   return CATEGORY_LABELS[category.slug] ?? category.name;
 }
 
-/** The HMCL-style search card: two field rows plus a pager/action row. */
+/** The instance row of the search card, mirroring HMCL's own combo. */
+function AddonTargetRow({
+  target,
+  onTargetChange,
+  instances
+}: {
+  target: AddonTarget;
+  onTargetChange: (target: AddonTarget) => void;
+  instances: readonly InstalledVersionDto[];
+}): React.JSX.Element {
+  return (
+    <div className="search-row">
+      <label className="search-field">
+        <span>实例</span>
+        <select
+          value={addonTargetOptionValue(target)}
+          onChange={(event) => {
+            const value = event.target.value;
+            onTargetChange(value === '' ? DEFAULT_ADDON_TARGET : { kind: 'instance', id: value });
+          }}
+        >
+          <option value="">{addonTargetLabel(DEFAULT_ADDON_TARGET)}</option>
+          {instances.map((instance) => (
+            <option key={instance.id} value={instance.id}>
+              {instance.id}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+}
+
+/** The HMCL-style search card: an instance row, two field rows plus a pager. */
 function AddonSearchCard({
   query,
   onQueryChange,
@@ -3968,9 +4137,7 @@ function AddonSearchCard({
   atLast,
   onPage,
   actions,
-instanceId,
-  onInstanceIdChange,
-  instances
+  target
 }: {
   query: string;
   onQueryChange: (value: string) => void;
@@ -3988,9 +4155,12 @@ instanceId,
   atLast: boolean;
   onPage: (offset: number) => void;
   actions?: React.ReactNode;
-  instanceId: string | undefined;
-  onInstanceIdChange?: (value: string | undefined) => void;
-  instances?: readonly InstalledVersionDto[];
+  /** Omitted on 整合包, which always creates a new instance instead. */
+  target?: {
+    value: AddonTarget;
+    onChange: (target: AddonTarget) => void;
+    instances: readonly InstalledVersionDto[];
+  };
 }): React.JSX.Element {
   // HMCL uses a static list of GA releases (GameVersionNumber.getDefaultGameVersions)
   // We approximate by filtering remote versions to releases only
@@ -3998,6 +4168,13 @@ instanceId,
 
   return (
     <div className="search-card card">
+      {target !== undefined && (
+        <AddonTargetRow
+          target={target.value}
+          onTargetChange={target.onChange}
+          instances={target.instances}
+        />
+      )}
       <div className="search-row">
         <label className="search-field">
           <span>名称</span>
@@ -4010,39 +4187,27 @@ instanceId,
             }}
           />
         </label>
-        {instances && instances.length > 0 && (
+        {/* With a target instance the game version is already decided, so HMCL
+            drops the filter entirely rather than leaving a stale one applied. */}
+        {target?.value.kind !== 'instance' && (
           <label className="search-field">
-            <span>安装到实例</span>
+            <span>游戏版本</span>
             <select
-              value={instanceId ?? ''}
-              onChange={(event) => onInstanceIdChange?.(event.target.value || undefined)}
+              value={gameVersion}
+              onChange={(event) => {
+                onGameVersionChange(event.target.value);
+                onPage(0);
+              }}
             >
-              <option value="">默认实例</option>
-              {instances.map((inst) => (
-                <option key={inst.id} value={inst.id}>
-                  {inst.id}
+              <option value="">全部版本</option>
+              {defaultGameVersions.map((value) => (
+                <option key={value} value={value}>
+                  {value}
                 </option>
               ))}
             </select>
           </label>
         )}
-        <label className="search-field">
-          <span>游戏版本</span>
-          <select
-            value={gameVersion}
-            onChange={(event) => {
-              onGameVersionChange(event.target.value);
-              onPage(0);
-            }}
-          >
-            <option value="">全部版本</option>
-            {defaultGameVersions.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
       <div className="search-row">
         <label className="search-field">
@@ -4121,10 +4286,14 @@ instanceId,
 function AddonTab({
   state,
   type,
+  target,
+  onTargetChange,
   onOpenDetail
 }: {
   state: StateHook;
   type: DlAddonKind;
+  target: AddonTarget;
+  onTargetChange: (target: AddonTarget) => void;
   onOpenDetail: (project: ModrinthProjectDto) => void;
 }): React.JSX.Element {
   const [result, setResult] = useState<ModrinthSearchResultDto | undefined>(undefined);
@@ -4200,7 +4369,9 @@ function AddonTab({
         } = { type: typeToProjectType(type), index: order, offset: nextOffset, limit: PAGE_SIZE };
         const trimmed = query.trim();
         if (trimmed !== '') payload.query = trimmed;
-        if (gameVersion !== '') payload.gameVersion = gameVersion;
+        // The card hides 游戏版本 once an instance is the target, so a filter
+        // left over from before must not silently narrow the results.
+        if (gameVersion !== '' && target.kind === 'default') payload.gameVersion = gameVersion;
         if (category !== '') payload.categories = [category];
         const page = await hmcl().searchModrinthProjects(payload);
         setOffset(nextOffset);
@@ -4209,7 +4380,7 @@ function AddonTab({
         setFailed(true);
       }
     },
-    [type, query, gameVersion, category, order]
+    [type, query, gameVersion, category, order, target.kind]
   );
 
   useEffect(() => {
@@ -4238,9 +4409,7 @@ function AddonTab({
         atFirst={atFirst}
         atLast={atLast}
         onPage={(next) => void load(next)}
-        instanceId={state.currentId}
-        onInstanceIdChange={(id) => id && state.setCurrentId(id)}
-        instances={state.installed}
+        target={{ value: target, onChange: onTargetChange, instances: state.installed }}
       />
 
       <div className="dl-list-wrap">
@@ -4450,9 +4619,6 @@ function ModpackTab({
             安装整合包
           </button>
         }
-        instanceId={state.currentId}
-        onInstanceIdChange={(id) => id && state.setCurrentId(id)}
-        instances={state.installed}
       />
 
       <div className="dl-list-wrap">

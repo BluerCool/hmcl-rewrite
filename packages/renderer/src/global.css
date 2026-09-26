@@ -1159,6 +1159,9 @@ body {
   color: var(--monet-on-surface);
   padding: 7px 10px;
   font-size: 13px;
+  /* Without this the select keeps the UA line box and ends up 2px taller than
+     the input beside it, which reads as a misaligned search card. */
+  line-height: 1.2;
   flex: 1;
   min-width: 0;
 }
@@ -1499,6 +1502,29 @@ body {
 
 .install-error {
   margin-top: 8px;
+  word-break: break-all;
+}
+
+/* Where the file will land, repeated in the dialog because the combo that
+   picked it lives on the page behind. */
+.install-target {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--monet-surface-container);
+  font-size: 13px;
+}
+
+.install-target-label {
+  color: var(--monet-on-surface-variant);
+  flex-shrink: 0;
+}
+
+.install-target-value {
+  color: var(--monet-on-surface);
+  font-weight: 500;
   word-break: break-all;
 }
 

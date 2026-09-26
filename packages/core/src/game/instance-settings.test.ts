@@ -69,6 +69,21 @@ describe('resolveGameDir', () => {
     // what makes a pack installed into one visible in the other.
     expect(await resolveGameDir(repo, 'a')).toBe(await resolveGameDir(repo, 'b'));
   });
+
+  it('resolves the default target to the shared root without an instance', async () => {
+    // The 「默认（.minecraft 根目录）」 entry carries no instance id, so it has to
+    // land in the same place a global instance would.
+    await setSettings('vanilla', { gameDirType: 'global' });
+    expect(await resolveGameDir(repo, undefined)).toBe(repo.rootDir);
+    expect(await resolveGameDir(repo, undefined)).toBe(await resolveGameDir(repo, 'vanilla'));
+  });
+
+  it('keeps the default target out of an isolated instance directory', async () => {
+    // Picking 默认 must not be silently redirected into whichever instance
+    // happens to be selected, or the file lands where the user did not ask.
+    await setSettings('isolated', { gameDirType: 'instance' });
+    expect(await resolveGameDir(repo, undefined)).not.toBe(await resolveGameDir(repo, 'isolated'));
+  });
 });
 
 describe('resource pack round trip', () => {

@@ -609,14 +609,16 @@ handle('modrinth:versions', async (projectIdOrSlug: string) => {
 });
 
 handle('addon:download', async (
-  instanceId: string,
+  instanceId: string | undefined,
   subdir: AddonSubdir,
   version: ModrinthVersionDto
 ) => {
   const launchId = -1;
   try {
     const repo = state.repository();
-    await assertInstanceExists(repo, instanceId);
+    // undefined means the 「默认（.minecraft 根目录）」 target, which belongs to
+    // no instance in particular and therefore skips the existence check.
+    if (instanceId !== undefined) await assertInstanceExists(repo, instanceId);
     // The renderer shows a footer while this downloads, so it needs a stage to
     // name. Without one it sat on whatever the status line said before — 空闲
     // for an install that was plainly in progress.

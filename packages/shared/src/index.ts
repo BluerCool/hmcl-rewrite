@@ -308,9 +308,14 @@ export interface HmclApi {
   fetchModrinthCategories(projectType: ModrinthProjectType): Promise<ModrinthCategoryDto[]>;
   /** Lists versions of a Modrinth project (by slug or id). */
   fetchModrinthVersions(projectIdOrSlug: string): Promise<ModrinthVersionDto[]>;
-  /** Downloads the primary file of a Modrinth version into an instance folder. */
+  /**
+   * Downloads the primary file of a Modrinth version into a game directory's
+   * addon folder. An undefined `instanceId` targets the shared `.minecraft`
+   * root (the 「默认」 entry), any other id resolves that instance's own
+   * directory, which is its version root only when it is version-isolated.
+   */
   downloadAddonFile(
-    instanceId: string,
+    instanceId: string | undefined,
     subdir: AddonSubdir,
     version: ModrinthVersionDto
   ): Promise<void>;
