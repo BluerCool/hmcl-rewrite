@@ -367,3 +367,123 @@ export function UpdateIcon(props: IconProps): React.JSX.Element {
     />
   );
 }
+
+/** HMCL SVG.DEPLOYED_CODE — 自动安装 tab (unselected). */
+export function DeployedCodeIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg
+      {...props}
+      path="M11 19.425V12.575L5 9.1V15.95L11 19.425ZM13 19.425 19 15.95V9.1L13 12.575V19.425ZM12 10.85 17.925 7.425 12 4 6.075 7.425 12 10.85ZM4 17.7Q3.525 17.425 3.2625 16.975T3 15.975V8.025Q3 7.475 3.2625 7.025T4 6.3L11 2.275Q11.475 2 12 2T13 2.275L20 6.3Q20.475 6.575 20.7375 7.025T21 8.025V15.975Q21 16.525 20.7375 16.975T20 17.7L13 21.725Q12.525 22 12 22T11 21.725L4 17.7ZM12 12Z"
+    />
+  );
+}
+
+/** HMCL SVG.DEPLOYED_CODE_FILL — 自动安装 tab (selected). */
+export function DeployedCodeFillIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg
+      {...props}
+      path="M11 21.725 4 17.7q-.475-.275-.7375-.725T3 15.975V8.025q0-.55.2625-1T4 6.3l7-4.025Q11.475 2 12 2t1 .275L20 6.3q.475.275.7375.725t.2625 1v7.95q0 .55-.2625 1T20 17.7l-7 4.025Q12.525 22 12 22t-1-.275Zm0-9.15v6.85L12 20l1-.575v-6.85L19 9.1V8.05l-1.075-.625L12 10.85 6.075 7.425 5 8.05V9.1l6 3.475Z"
+    />
+  );
+}
+
+/** HMCL SVG.SCHEMA — 原理图管理 tab (unselected). */
+export function SchemaIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg
+      {...props}
+      path="M4 23V17H6.5V15H4V9H6.5V7H4V1h7V7H8.5V9H11v2h3V9h7v6H14V13H11v2H8.5v2H11v6H4Zm2-2H9V19H6v2Zm0-8H9V11H6v2Zm10 0h3V11H16v2ZM6 5H9V3H6V5ZM7.5 4Zm0 8Zm10 0Zm-10 8Z"
+    />
+  );
+}
+
+/** HMCL SVG.SCHEMA_FILL — 原理图管理 tab (selected). */
+export function SchemaFillIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg
+      {...props}
+      path="M4 23V17H6.5V15H4V9H6.5V7H4V1h7V7H8.5V9H11v2h3V9h7v6H14V13H11v2H8.5v2H11v6H4Z"
+    />
+  );
+}
+
+/** HMCL SVG.SETTINGS_FILL — 游戏设置 tab (selected). */
+export function SettingsFillIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg
+      {...props}
+      path="M9.25 22l-.4-3.2q-.325-.125-.6125-.3t-.5625-.375L4.7 19.375l-2.75-4.75 2.575-1.95Q4.5 12.5 4.5 12.3375v-.675q0-.1625.025-.3375L1.95 9.375 4.7 4.625l2.975 1.25q.275-.2.575-.375t.6-.3L9.25 2h5.5l.4 3.2q.325.125.6125.3t.5625.375L19.3 4.625l2.75 4.75-2.575 1.95q.025.175.025.3375v.675q0 .1625-.05.3375l2.575 1.95-2.75 4.75-2.95-1.25q-.275.2-.575.375t-.6.3l-.4 3.2H9.25Zm2.8-6.5q1.45 0 2.475-1.025T15.55 12 14.525 9.525 12.05 8.5q-1.475 0-2.4875 1.025T8.55 12q0 1.45 1.0125 2.475T12.05 15.5Z"
+    />
+  );
+}
+
+/** HMCL SVG.SCREENSHOT_MONITOR — 截图文件夹 menu icon. */
+export function ScreenshotIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg
+      {...props}
+      path="M15 16H19V12H17.5V14.5H15V16ZM5 10H6.5V7.5H9V6H5V10ZM8 21V19H4Q3.175 19 2.5875 18.4125T2 17V5Q2 4.175 2.5875 3.5875T4 3H20Q20.825 3 21.4125 3.5875T22 5V17Q22 17.825 21.4125 18.4125T20 19H16V21H8ZM4 17H20V5H4V17ZM4 17V5 17Z"
+    />
+  );
+}
+
+/** HMCL SVG.SCRIPT — 日志文件夹 / 生成启动脚本 menu icon. */
+export function ScriptIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg
+      {...props}
+      path="M14,20A2,2 0 0,0 16,18V5H9A1,1 0 0,0 8,6V16H5V5A3,3 0 0,1 8,2H19A3,3 0 0,1 22,5V6H18V18L18,19A3,3 0 0,1 15,22H5A3,3 0 0,1 2,19V18H12A2,2 0 0,0 14,20Z"
+    />
+  );
+}
+
+/** HMCL SVG.FRAME_BUG — 崩溃报告文件夹 menu icon. */
+export function BugIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg
+      {...props}
+      path="M12 19q1.65 0 2.825-1.175T16 15v-4q0-1.65-1.175-2.825T12 7T9.175 8.175T8 11v4q0 1.65 1.175 2.825T12 19m-2-3h4v-2h-4zm0-4h4v-2h-4zm2 9q-1.625 0-3.012-.8T6.8 18H4v-2h2.1q-.075-.5-.088-1T6 14H4v-2h2q0-.5.012-1t.088-1H4V8h2.8q.35-.575.788-1.075T8.6 6.05L7 4.4L8.4 3l2.15 2.15q.7-.225 1.425-.225t1.425.225L15.6 3L17 4.4l-1.65 1.65q.575.375 1.038.862T17.2 8H20v2h-2.1q.075.5.088 1T18 12h2v2h-2q0 .5-.013 1t-.087 1H20v2h-2.8q-.8 1.4-2.187 2.2T12 21M1 6V3q0-.825.588-1.412T3 1h3v2H3v3zm5 17H3q-.825 0-1.412-.587T1 21v-3h2v3h3zm12 0v-2h3v-3h2v3q0 .825-.587 1.413T21 23zm3-17V3h-3V1h3q.825 0 1.413.588T23 3v3z"
+    />
+  );
+}
+
+/** HMCL SVG.FOLDER_COPY — 复制游戏实例 menu icon. */
+export function FolderCopyIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg
+      {...props}
+      path="M3 21Q2.175 21 1.5875 20.4125T1 19V6H3V19H20V21H3ZM7 17Q6.175 17 5.5875 16.4125T5 15V4Q5 3.175 5.5875 2.5875T7 2H12L14 4H21Q21.825 4 22.4125 4.5875T23 6V15Q23 15.825 22.4125 16.4125T21 17H7ZM7 15H21V6H13.175L11.175 4H7V15ZM7 15V4 15Z"
+    />
+  );
+}
+
+/** HMCL SVG.OUTPUT — 导出整合包 menu icon. */
+export function OutputIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg
+      {...props}
+      path="M5 21Q4.175 21 3.5875 20.4125T3 19V5Q3 4.175 3.5875 3.5875T5 3H19Q19.825 3 20.4125 3.5875T21 5V7H19V5H5V19H19V17H21V19Q21 19.825 20.4125 20.4125T19 21H5ZM17 17 15.6 15.6 18.175 13H9V11H18.175L15.6 8.4 17 7 22 12 17 17Z"
+    />
+  );
+}
+
+/** HMCL SVG.FOLDER_OPEN — 浏览 toolbar item icon. */
+export function FolderOpenIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg
+      {...props}
+      path="M4 20Q3.175 20 2.5875 19.4125T2 18V6Q2 5.175 2.5875 4.5875T4 4H10L12 6H20Q20.825 6 21.4125 6.5875T22 8H11.175L9.175 6H4V18L6.4 10H23.5L20.925 18.575Q20.725 19.225 20.1875 19.6125T19 20H4ZM6.1 18H19L20.8 12H7.9L6.1 18ZM6.1 18 7.9 12 6.1 18ZM4 8V6 8Z"
+    />
+  );
+}
+
+/** HMCL SVG.MENU — 管理 toolbar item icon. */
+export function MenuIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg
+      {...props}
+      path="M3 18V16H21V18H3ZM3 13V11H21V13H3ZM3 8V6H21V8H3Z"
+    />
+  );
+}
