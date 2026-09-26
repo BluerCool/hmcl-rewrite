@@ -1422,9 +1422,9 @@ function InstanceSettingsPanel({
   return (
     <div className="instance-settings-page instance-settings-panel">
       <div className="settings-page-body">
-        <div className="settings-section-card">
+        <div className="settings-section">
           <div className="settings-section-title">基本设置</div>
-
+          <div className="settings-section-list">
           <div className="settings-row">
             <div className="settings-row-label">
               <span>版本隔离</span>
@@ -1477,11 +1477,12 @@ function InstanceSettingsPanel({
               )}
             </div>
           </div>
+          </div>
         </div>
 
-        <div className="settings-section-card">
+        <div className="settings-section">
           <div className="settings-section-title">游戏设置</div>
-
+          <div className="settings-section-list">
           <div className="settings-row">
             <div className="settings-row-label">
               <span>游戏 Java</span>
@@ -1520,9 +1521,9 @@ function InstanceSettingsPanel({
             </div>
           </div>
 
-          <div className="settings-subsection">
-            <div className="settings-subsection-title">游戏内存</div>
-
+          <div className="settings-section">
+            <div className="settings-section-title">游戏内存</div>
+            <div className="settings-section-list">
             <div className="settings-row">
               <div className="settings-row-label">
                 <span>内存分配</span>
@@ -1610,11 +1611,12 @@ function InstanceSettingsPanel({
                 )}
               </>
             )}
+            </div>
           </div>
 
-          <div className="settings-subsection">
-            <div className="settings-subsection-title">游戏窗口类型</div>
-
+          <div className="settings-section">
+            <div className="settings-section-title">游戏窗口类型</div>
+            <div className="settings-section-list">
             <div className="settings-row">
               <div className="settings-row-label">
                 <span>窗口模式</span>
@@ -1669,11 +1671,12 @@ function InstanceSettingsPanel({
                 </div>
               </div>
             )}
+            </div>
           </div>
 
-          <div className="settings-subsection">
-            <div className="settings-subsection-title">快速游玩</div>
-
+          <div className="settings-section">
+            <div className="settings-section-title">快速游玩</div>
+            <div className="settings-section-list">
             <div className="settings-row">
               <div className="settings-row-label">
                 <span>快速游玩选项</span>
@@ -1723,11 +1726,12 @@ function InstanceSettingsPanel({
                 />
               </div>
             )}
+            </div>
           </div>
 
-          <div className="settings-subsection">
-            <div className="settings-subsection-title">高级选项</div>
-
+          <div className="settings-section">
+            <div className="settings-section-title">高级选项</div>
+            <div className="settings-section-list">
             <div className="settings-row">
               <div className="settings-row-label">
                 <span>游戏运行路径</span>
@@ -1787,12 +1791,14 @@ function InstanceSettingsPanel({
                 <option value="low">低</option>
               </select>
             </div>
+            </div>
+          </div>
           </div>
         </div>
 
-        <div className="settings-section-card">
+        <div className="settings-section">
           <div className="settings-section-title">Java 虚拟机设置</div>
-
+          <div className="settings-section-list">
           <div className="settings-row">
             <div className="settings-row-label">
               <span>不添加默认的 Java 虚拟机参数</span>
@@ -1842,8 +1848,9 @@ function InstanceSettingsPanel({
             />
           </div>
 
-          <div className="settings-subsection">
-            <div className="settings-subsection-title">已弃用的 JVM 内存选项</div>
+          <div className="settings-section">
+            <div className="settings-section-title">已弃用的 JVM 内存选项</div>
+            <div className="settings-section-list">
             <div className="settings-row">
               <div className="settings-row-label">
                 <span>内存永久保存区域</span>
@@ -1862,12 +1869,14 @@ function InstanceSettingsPanel({
                 <span>MiB</span>
               </div>
             </div>
+            </div>
+          </div>
           </div>
         </div>
 
-        <div className="settings-section-card">
+        <div className="settings-section">
           <div className="settings-section-title">自定义命令</div>
-
+          <div className="settings-section-list">
           <div className="settings-row">
             <div className="settings-row-label">
               <span>游戏启动前执行命令</span>
@@ -1906,11 +1915,12 @@ function InstanceSettingsPanel({
               onChange={(e) => save(e.target.value ? { postExitCommand: e.target.value } : {})}
             />
           </div>
+          </div>
         </div>
 
-        <div className="settings-section-card">
+        <div className="settings-section">
           <div className="settings-section-title">图形设置</div>
-
+          <div className="settings-section-list">
           <div className="settings-row">
             <div className="settings-row-label">
               <span>图形 API</span>
@@ -1929,11 +1939,12 @@ function InstanceSettingsPanel({
               <option value="vulkan">Vulkan</option>
             </select>
           </div>
+          </div>
         </div>
 
-        <div className="settings-section-card">
+        <div className="settings-section">
           <div className="settings-section-title">本地库设置</div>
-
+          <div className="settings-section-list">
           <div className="settings-row">
             <div className="settings-row-label">
               <span>使用自定义本地库</span>
@@ -1995,11 +2006,12 @@ function InstanceSettingsPanel({
               onChange={(e) => save({ useNativeOpenAL: e.target.checked })}
             />
           </div>
+          </div>
         </div>
 
-        <div className="settings-section-card">
+        <div className="settings-section">
           <div className="settings-section-title">启动器设置</div>
-
+          <div className="settings-section-list">
           <div className="settings-row">
             <div className="settings-row-label">
               <span>启动器可见性</span>
@@ -2075,6 +2087,7 @@ function InstanceSettingsPanel({
               checked={settings.dontCheckGameCompleteness === true}
               onChange={(e) => save({ dontCheckGameCompleteness: e.target.checked })}
             />
+          </div>
           </div>
         </div>
       </div>

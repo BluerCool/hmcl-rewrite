@@ -2685,56 +2685,81 @@ html.transparent-bg .launcher-bg::after {
   width: 100%;
 }
 
-.settings-section-card {
-  background: var(--monet-surface-container-low);
-  border-radius: 12px;
-  padding: 16px 20px;
-  margin-bottom: 16px;
-}
-
-.settings-section-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--monet-primary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--monet-outline-variant);
-}
-
-.settings-subsection {
+/* ===== HMCL GameSettingsPage layout =====
+   A section is a plain flow block: a small title with 8px of top padding,
+   followed by a ComponentList-style surface box. Rows inside the box are
+   separated by a 1px outline-variant rule and the box clips its corners to
+   4px, rather than each setting living in its own nested card. */
+.settings-section {
   margin-bottom: 20px;
 }
 
-.settings-subsection-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--monet-on-surface);
-  margin-bottom: 12px;
-  padding-left: 4px;
+.settings-section:last-child {
+  margin-bottom: 0;
 }
 
+.settings-section-title {
+  font-size: 13px;
+  color: var(--monet-on-surface);
+  padding: 8px 0 0;
+}
+
+.settings-section-list {
+  background: var(--monet-surface);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.settings-section-list > .settings-row {
+  border-top: 1px solid var(--monet-outline-variant);
+}
+
+.settings-section-list > :first-child {
+  border-top: none;
+}
+
+.settings-section-list > .settings-row:hover {
+  background: color-mix(in srgb, var(--monet-on-surface) 4%, transparent);
+}
+
+/* A group nested inside another section's list (HMCL's ComponentSublist):
+   square corners, the surface-container tone, and a separator above it. */
+.settings-section-list > .settings-section {
+  margin-bottom: 0;
+  border-top: 1px solid var(--monet-outline-variant);
+}
+
+.settings-section-list > .settings-section:first-child {
+  border-top: none;
+}
+
+.settings-section-list > .settings-section > .settings-section-title {
+  padding: 14px 16px 6px;
+}
+
+.settings-section-list > .settings-section > .settings-section-list {
+  background: var(--monet-surface-container);
+  border-radius: 0;
+}
+
+/* LineComponent metrics: 10px 16px container padding, 12px HBox spacing,
+   13px title over a 12px subtitle. The separator between rows comes from
+   .settings-section-list, not from the row itself. */
 .settings-row {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 12px 0;
-}
-
-.settings-row:not(:last-child) {
-  border-bottom: 1px solid var(--monet-outline-variant);
+  gap: 12px;
+  padding: 10px 16px;
 }
 
 .settings-row-label {
   flex: 1;
-  min-width: 180px;
+  min-width: 0;
 }
 
 .settings-row-label span:first-child {
   display: block;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 13px;
   color: var(--monet-on-surface);
 }
 
@@ -2742,7 +2767,6 @@ html.transparent-bg .launcher-bg::after {
   display: block;
   font-size: 12px;
   color: var(--monet-on-surface-variant);
-  margin-top: 2px;
 }
 
 .settings-row-control {
@@ -2750,7 +2774,7 @@ html.transparent-bg .launcher-bg::after {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-width: 200px;
+  min-width: 0;
 }
 
 .settings-row-control select,
@@ -3067,10 +3091,6 @@ html.transparent-bg .launcher-bg::after {
 
 .instance-manage-body .settings-scroll {
   height: 100%;
-}
-
-.instance-manage-body .settings-section-card {
-  background: var(--monet-surface-container-low);
 }
 
 .instance-icon-control {
