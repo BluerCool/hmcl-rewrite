@@ -1117,10 +1117,20 @@ function HomePage({ state }: StateHookProps): React.JSX.Element {
 function InstancesPage({ state }: StateHookProps): React.JSX.Element {
   const [renameTarget, setRenameTarget] = useState<string | undefined>(undefined);
   const [renameValue, setRenameValue] = useState('');
+  /** Pending destructive delete; the instance is only removed once confirmed. */
+  const [deleteTarget, setDeleteTarget] = useState<string | undefined>(undefined);
 
-  const deleteInstance = async (id: string): Promise<void> => {
-    await hmcl().deleteInstance(id);
-    await state.refreshInstalled();
+  /** Permanently removes the instance directory, once confirmed. */
+  const deleteInstance = async (): Promise<void> => {
+    if (deleteTarget === undefined) return;
+    const id = deleteTarget;
+    setDeleteTarget(undefined);
+    try {
+      await hmcl().deleteInstance(id);
+      await state.refreshInstalled();
+    } catch (error) {
+      state.appendLog({ text: `删除失败: ${String(error)}`, isError: true });
+    }
   };
 
   const renameInstance = async (): Promise<void> => {
@@ -1220,7 +1230,7 @@ function InstancesPage({ state }: StateHookProps): React.JSX.Element {
                 <MoreVertIcon size={19} />
               </button>
               {menuFor === version.id && (
-                <ul className="instance-menu">
+                <ul className="instance-menu" onClick={(e) => e.stopPropagation()}>
                   <li>
                     <button
                       onClick={() => { setMenuFor(undefined); void launchTest(version.id); }}
@@ -1259,7 +1269,7 @@ function InstancesPage({ state }: StateHookProps): React.JSX.Element {
                   <li>
                     <button
                       className="delete"
-                      onClick={() => { setMenuFor(undefined); void deleteInstance(version.id); }}
+                      onClick={() => { setMenuFor(undefined); setDeleteTarget(version.id); }}
                     >
                       <DeleteForeverIcon size={17} />
                       删除
@@ -1290,6 +1300,22 @@ function InstancesPage({ state }: StateHookProps): React.JSX.Element {
             <div className="sheet-actions">
               <button onClick={() => { setRenameTarget(undefined); setRenameValue(''); }}>取消</button>
               <button className="raised-button" onClick={() => void renameInstance()}>确定</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteTarget !== undefined && (
+        <div className="sheet-backdrop">
+          <div className="sheet">
+            <div className="card-title">确定要删除实例 “{deleteTarget}” 吗？</div>
+            <p className="notice-text">
+              该实例的整个文件夹都会被永久删除，此操作无法撤销。
+              其他继承该版本的实例可能将无法启动。
+            </p>
+            <div className="sheet-actions">
+              <button onClick={() => setDeleteTarget(undefined)}>取消</button>
+              <button className="raised-button delete" onClick={() => void deleteInstance()}>删除</button>
             </div>
           </div>
         </div>
@@ -2062,12 +2088,15 @@ function InstanceManagePage({ state }: StateHookProps): React.JSX.Element {
   const [manageOpen, setManageOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<string | undefined>(undefined);
   const [renameValue, setRenameValue] = useState('');
+  /** Pending destructive delete; the instance is only removed once confirmed. */
+  const [deleteTarget, setDeleteTarget] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (instanceId === undefined) return;
     setTab('settings');
     setBrowseOpen(false);
     setManageOpen(false);
+    setDeleteTarget(undefined);
   }, [instanceId]);
 
   if (instanceId === undefined) return <></>;
@@ -2110,7 +2139,13 @@ function InstanceManagePage({ state }: StateHookProps): React.JSX.Element {
     }
   };
 
+  /**
+   * Permanently removes the instance directory. Destructive and irreversible,
+   * so it is only ever reached from the confirmation sheet.
+   */
   const removeInstance = async (): Promise<void> => {
+    if (deleteTarget !== instanceId) return;
+    setDeleteTarget(undefined);
     try {
       await hmcl().deleteInstance(instanceId);
       await state.refreshInstalled();
@@ -2199,7 +2234,7 @@ function InstanceManagePage({ state }: StateHookProps): React.JSX.Element {
                 </button>
               </li>
               <li>
-                <button className="delete" onClick={() => { setManageOpen(false); void removeInstance(); }}>
+                <button className="delete" onClick={() => { setManageOpen(false); setDeleteTarget(instanceId); }}>
                   <DeleteForeverIcon size={15} /> 删除该实例
                 </button>
               </li>
@@ -2276,6 +2311,25 @@ function InstanceManagePage({ state }: StateHookProps): React.JSX.Element {
       )}
       {renameTarget !== undefined && (
         <button className="menu-backdrop" aria-label="关闭" onClick={() => setRenameTarget(undefined)} />
+      )}
+
+      {deleteTarget !== undefined && (
+        <>
+          <div className="sheet-backdrop">
+            <div className="sheet">
+              <div className="card-title">确定要删除实例 “{deleteTarget}” 吗？</div>
+              <p className="notice-text">
+                该实例的整个文件夹都会被永久删除，此操作无法撤销。
+                其他继承该版本的实例可能将无法启动。
+              </p>
+              <div className="sheet-actions">
+                <button onClick={() => setDeleteTarget(undefined)}>取消</button>
+                <button className="raised-button delete" onClick={() => void removeInstance()}>删除</button>
+              </div>
+            </div>
+          </div>
+          <button className="menu-backdrop" aria-label="关闭" onClick={() => setDeleteTarget(undefined)} />
+        </>
       )}
     </div>
   );
