@@ -151,11 +151,30 @@ export function useLauncherState() {
   const [progress, setProgress] = useState<DownloadProgressDto | undefined>();
   const [downloading, setDownloading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
   const [deviceCode, setDeviceCode] = useState<MicrosoftDeviceCodeDto | undefined>(undefined);
   const [maximized, setMaximized] = useState(false);
 
   const finishTimer = useRef<number | undefined>(undefined);
+  const stageTimer = useRef<number | undefined>(undefined);
   const lastDownloadEvent = useRef<number>(0);
+
+  /**
+   * Writes the status line. Transient statuses (a finished launch, a failure)
+   * schedule their own reset; a real stage event cancels the pending one so a
+   * new launch never inherits a stale countdown.
+   */
+  const setStageText = (text: string): void => {
+    window.clearTimeout(stageTimer.current);
+    setStage(text);
+  };
+
+  /** Shows `text` briefly, then falls back to the idle label. */
+  const setTransientStage = (text: string, ms = 4000): void => {
+    window.clearTimeout(stageTimer.current);
+    setStage(text);
+    stageTimer.current = window.setTimeout(() => setStage('空闲'), ms);
+  };
 
   // Keep the latest settings readable from refreshInstalled even before the
   // settings state has propagated to the current render's closure.
@@ -188,22 +207,39 @@ export function useLauncherState() {
     setLogs((previous) => [...previous, line].slice(-800));
   };
 
+  /**
+   * Shared failure path for all three launch entry points (home pane, instance
+   * list, instance manage). Previously each one only appended to the log
+   * drawer, which starts closed, so a failed launch looked like nothing had
+   * happened at all. Now the reason is logged, the busy flag is released, the
+   * status line says so, and the drawer opens to show the detail.
+   */
+  const reportLaunchFailure = (error: unknown): void => {
+    appendLog({ text: String(error), isError: true });
+    setBusy(false);
+    setTransientStage('启动失败');
+    setLogOpen(true);
+  };
+
   const subscribeEvents = (): (() => void) =>
     hmcl().onEvent((event: LauncherEvent) => {
       switch (event.kind) {
         case 'stage':
-          setStage(STAGE_LABELS[event.stage] ?? event.stage);
+          setStageText(STAGE_LABELS[event.stage] ?? event.stage);
           break;
         case 'download-progress':
           setProgress(event.progress);
           setDownloading(event.progress.total > 0);
           lastDownloadEvent.current = Date.now();
           // Hide the bar 700ms after the LAST event (not after completion),
-          // so batch transitions don't cause flicker.
+          // so batch transitions don't cause flicker. Dropping the progress
+          // alongside it keeps a finished download from leaving a stale
+          // "N/M files" count on the status line.
           window.clearTimeout(finishTimer.current);
           finishTimer.current = window.setTimeout(() => {
             if (Date.now() - lastDownloadEvent.current >= 700) {
               setDownloading(false);
+              setProgress(undefined);
             }
           }, 700);
           break;
@@ -211,8 +247,23 @@ export function useLauncherState() {
           appendLog({ text: event.line, isError: event.isError });
           break;
         case 'exit':
-          setStage(event.code === 0 ? '游戏已退出' : `游戏已退出，退出码 ${String(event.code)}`);
           setBusy(false);
+          if (event.code === 0) {
+            setTransientStage('游戏已退出');
+          } else if (event.code === -1) {
+            // The main process maps a failed launch to -1 and puts the reason
+            // in the log, so open the drawer instead of leaving a bare -1 on
+            // screen. This is the failure path that actually fires: a launch
+            // that blows up never rejects launch:start.
+            setTransientStage('启动失败');
+            setLogOpen(true);
+          } else {
+            // The game did start, then exited on its own. Its own output is
+            // already in the log, so surface that too (HMCL does the same for
+            // a crash) rather than only reporting a code.
+            setTransientStage(`游戏已退出，退出码 ${String(event.code)}`);
+            setLogOpen(true);
+          }
           break;
         case 'microsoft-device-code':
           setDeviceCode(event.code);
@@ -225,10 +276,14 @@ export function useLauncherState() {
           if (event.ok) {
             // Success: keep the 700ms grace period (same as complete progress)
             window.clearTimeout(finishTimer.current);
-            finishTimer.current = window.setTimeout(() => setDownloading(false), 700);
+            finishTimer.current = window.setTimeout(() => {
+              setDownloading(false);
+              setProgress(undefined);
+            }, 700);
           } else {
             // Failure: stop immediately and show error in log
             setDownloading(false);
+            setProgress(undefined);
             appendLog({ text: `下载失败: ${event.error ?? '未知错误'}`, isError: true });
           }
           break;
@@ -254,6 +309,8 @@ export function useLauncherState() {
     downloading,
     busy,
     setBusy,
+    logOpen,
+    setLogOpen,
     deviceCode,
     managingId,
     setManagingId,
@@ -262,6 +319,7 @@ export function useLauncherState() {
     refreshInstalled,
     refreshAccounts,
     appendLog,
+    reportLaunchFailure,
     subscribeEvents,
     setPage
   };
@@ -285,7 +343,6 @@ const STAGE_LABELS: Record<string, string> = {
 export function Shell(): React.JSX.Element | null {
   const state = useLauncherState();
   const [page, setPage] = useState<PageId>('home');
-  const [logOpen, setLogOpen] = useState(false);
   const [downloadDetail, setDownloadDetail] = useState<ModrinthProjectDto | undefined>(undefined);
   const [bgUrl, setBgUrl] = useState<string | undefined>(undefined);
   const [dragging, setDragging] = useState(false);
@@ -497,7 +554,7 @@ export function Shell(): React.JSX.Element | null {
               className="titlebar-text-button"
               title="日志"
               aria-label="日志"
-              onClick={() => setLogOpen((open) => !open)}
+              onClick={() => state.setLogOpen((open) => !open)}
             >
               <TerminalIcon size={15} />
               日志
@@ -578,8 +635,8 @@ export function Shell(): React.JSX.Element | null {
               <NavItem
                 icon={<TerminalIcon size={20} />}
                 label="日志"
-                active={logOpen}
-                onClick={() => setLogOpen((open) => !open)}
+                active={state.logOpen}
+                onClick={() => state.setLogOpen((open) => !open)}
               />
 
               <div className="sidebar-category">服务</div>
@@ -624,7 +681,6 @@ export function Shell(): React.JSX.Element | null {
                 )}
                 {page === 'settings' && <SettingsPage state={pageProps} />}
                 {page === 'terracotta' && <TerracottaPage />}
-                {logOpen && <LogDrawer state={pageProps} onClose={() => setLogOpen(false)} />}
               </div>
             </main>
           </div>
@@ -638,9 +694,23 @@ export function Shell(): React.JSX.Element | null {
           </div>
         </div>
       )}
-      {state.downloading && state.progress !== undefined && (
-        <DownloadFooter progress={state.progress} stage={state.stage} />
+      {/* Download progress always deserves a footer. A launch also earns one on
+          every page except home, which already surfaces the stage on the launch
+          button, the status line and the sidebar — and whose launch pane is
+          pinned to the bottom-right, so a footer there would shift the button
+          out from under the cursor that just clicked it. */}
+      {(state.downloading || (state.busy && page !== 'home')) && (
+        <LaunchFooter
+          stage={state.stage}
+          progress={state.downloading ? state.progress : undefined}
+        />
       )}
+      {/* The log drawer sits above every page, not inside one of them. It used
+          to live in the non-home branch, which meant the title bar's 日志 button
+          did nothing on the home and instance-manage pages -- and a failed
+          launch, whose only feedback is this drawer, stayed invisible exactly
+          where launches are started. */}
+      {state.logOpen && <LogDrawer state={pageProps} onClose={() => state.setLogOpen(false)} />}
     </div>
   );
 }
@@ -1050,6 +1120,8 @@ interface StateHook {
   downloading: boolean;
   busy: boolean;
   setBusy: (busy: boolean) => void;
+  logOpen: boolean;
+  setLogOpen: (open: boolean | ((open: boolean) => boolean)) => void;
   deviceCode: MicrosoftDeviceCodeDto | undefined;
   managingId: string | undefined;
   setManagingId: (id: string | undefined) => void;
@@ -1058,6 +1130,7 @@ interface StateHook {
   refreshInstalled: (preferredSettings?: SettingsDto) => Promise<void>;
   refreshAccounts: () => Promise<void>;
   appendLog: (line: LogLine) => void;
+  reportLaunchFailure: (error: unknown) => void;
   setPage: (page: PageId) => void;
 }
 
@@ -1073,8 +1146,7 @@ function HomePage({ state }: StateHookProps): React.JSX.Element {
     try {
       await hmcl().launch(state.currentId);
     } catch (error) {
-      state.appendLog({ text: String(error), isError: true });
-      state.setBusy(false);
+      state.reportLaunchFailure(error);
     }
   };
 
@@ -1094,7 +1166,7 @@ function HomePage({ state }: StateHookProps): React.JSX.Element {
 
       <div className="home-status">
         {state.stage}
-        {state.progress !== undefined && state.progress.total > 0
+        {state.downloading && state.progress !== undefined && state.progress.total > 0
           ? ` · ${state.progress.completed}/${state.progress.total} 文件`
           : ''}
       </div>
@@ -1196,8 +1268,7 @@ function InstancesPage({ state }: StateHookProps): React.JSX.Element {
     try {
       await hmcl().launch(id);
     } catch (e) {
-      state.appendLog({ text: String(e), isError: true });
-      state.setBusy(false);
+      state.reportLaunchFailure(e);
     }
   };
 
@@ -2157,8 +2228,7 @@ function InstanceManagePage({ state }: StateHookProps): React.JSX.Element {
     hmcl()
       .launch(instanceId)
       .catch((error: unknown) => {
-        state.appendLog({ text: String(error), isError: true });
-        state.setBusy(false);
+        state.reportLaunchFailure(error);
       });
   };
 
@@ -4683,47 +4753,61 @@ function formatMiB(mib: number): string {
   return `${Math.round(mib)} MiB`;
 }
 
-/** Global download progress footer shown while any download is active. */
-function DownloadFooter({
+/**
+ * Bottom progress bar for anything long-running: a download (determinate, with
+ * the current file and transfer rate) or a launch that has no download to show
+ * (indeterminate). The launch case is what gives the instance list and instance
+ * manage pages any feedback at all — neither has a sidebar or a status line.
+ */
+function LaunchFooter({
   progress,
   stage
 }: {
-  progress: DownloadProgressDto;
+  progress: DownloadProgressDto | undefined;
   stage: string;
 }): React.JSX.Element {
   const percent =
-    progress.totalBytes !== undefined && progress.totalBytes > 0
-      ? Math.min(100, Math.round((progress.downloadedBytes / progress.totalBytes) * 100))
-      : progress.total > 0
-        ? Math.min(100, Math.round((progress.completed / progress.total) * 100))
-        : 0;
+    progress === undefined
+      ? undefined
+      : progress.totalBytes !== undefined && progress.totalBytes > 0
+        ? Math.min(100, Math.round((progress.downloadedBytes / progress.totalBytes) * 100))
+        : progress.total > 0
+          ? Math.min(100, Math.round((progress.completed / progress.total) * 100))
+          : 0;
 
   return (
     <div className="dl-footer">
       <div className="dl-footer-top">
         <span className="dl-footer-stage">{stage}</span>
-        <span className="dl-footer-files">
-          {progress.completed}/{progress.total} 文件
-        </span>
-      </div>
-      <div className="dl-progress">
-        <div className="dl-progress-fill" style={{ width: `${percent}%` }} />
-      </div>
-      <div className="dl-footer-bottom">
-        {progress.currentFile !== undefined && (
-          <span className="dl-current-file" title={progress.currentFile}>
-            {progress.currentFile}
+        {progress !== undefined && progress.total > 0 && (
+          <span className="dl-footer-files">
+            {progress.completed}/{progress.total} 文件
           </span>
         )}
-        <span className="dl-footer-metrics">
-          {progress.bytesPerSecond > 0 && <span>{formatSpeed(progress.bytesPerSecond)}</span>}
-          {progress.totalBytes !== undefined && (
-            <span>
-              {formatBytes(progress.downloadedBytes)}/{formatBytes(progress.totalBytes)}
+      </div>
+      <div className="dl-progress">
+        <div
+          className={`dl-progress-fill${percent === undefined ? ' indeterminate' : ''}`}
+          style={percent === undefined ? undefined : { width: `${percent}%` }}
+        />
+      </div>
+      {progress !== undefined && (progress.currentFile !== undefined || progress.bytesPerSecond > 0) && (
+        <div className="dl-footer-bottom">
+          {progress.currentFile !== undefined && (
+            <span className="dl-current-file" title={progress.currentFile}>
+              {progress.currentFile}
             </span>
           )}
-        </span>
-      </div>
+          <span className="dl-footer-metrics">
+            {progress.bytesPerSecond > 0 && <span>{formatSpeed(progress.bytesPerSecond)}</span>}
+            {progress.totalBytes !== undefined && (
+              <span>
+                {formatBytes(progress.downloadedBytes)}/{formatBytes(progress.totalBytes)}
+              </span>
+            )}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

@@ -493,9 +493,15 @@ body {
   background: var(--monet-primary);
 }
 
+/* Only the "nothing to launch" case dims. While a launch is in flight the
+   button must keep full contrast, otherwise the busy state reads as broken:
+   the stage text loses legibility and the sweep below washes out with it. */
 .launch-button:disabled {
-  opacity: 0.6;
   cursor: default;
+}
+
+.launch-button:disabled:not(.busy) {
+  opacity: 0.6;
 }
 
 .launch-text {
@@ -1010,10 +1016,15 @@ body {
 
 /* ============ Log drawer ============ */
 
+/* Anchored to the window rather than to any page container, so the drawer
+   covers the full width (sidebar included) from every page. z-index clears
+   page content and popups (200) but stays under transient menus (1000) and
+   the drag overlay (2000). */
 .log-drawer {
-  position: absolute;
+  position: fixed;
   inset: auto 0 0 0;
   height: 42%;
+  z-index: 900;
   display: flex;
   flex-direction: column;
   background: #101216;
@@ -1954,6 +1965,30 @@ body {
   height: 100%;
   background: var(--monet-primary);
   transition: width 120ms linear;
+}
+
+/* A launch with nothing to download has no percentage to show, so the bar
+   sweeps instead — the same affordance HMCL uses for indeterminate work. */
+.dl-progress-fill.indeterminate {
+  width: 40%;
+  transition: none;
+  animation: launch-sweep 1.1s ease-in-out infinite;
+}
+
+/* Both launch progress animations loop forever, so honour the OS setting. */
+@media (prefers-reduced-motion: reduce) {
+  .launch-button.busy::after {
+    animation: none;
+    width: 100%;
+    transform: none;
+    opacity: 0.4;
+  }
+
+  .dl-progress-fill.indeterminate {
+    animation: none;
+    width: 100%;
+    opacity: 0.4;
+  }
 }
 
 .dl-footer-bottom {
