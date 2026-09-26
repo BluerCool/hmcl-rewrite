@@ -23,6 +23,8 @@
   --monet-on-primary-fixed: #00105b;
   --monet-tertiary-fixed-dim: #f6bd58;
   --monet-on-tertiary-fixed: #281900;
+  /* Elevation for popups/menus. */
+  --monet-shadow: 0 2px 6px rgba(0, 0, 0, 0.16), 0 6px 20px rgba(0, 0, 0, 0.14);
 }
 
 * {
@@ -90,7 +92,7 @@ body {
 .raised-button:active:not(:disabled),
 .menu-button:active:not(:disabled),
 .launch-button:active:not(:disabled),
-.advanced-list-item:active,
+.advanced-list-item:active:not(:disabled),
 .java-list li:active {
   transform: scale(0.97);
 }
@@ -217,10 +219,63 @@ body {
   font-weight: 700;
   color: var(--monet-on-primary-container);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Back arrow: HMCL's nav-bar back button lives inside the draggable title bar,
+   so it opts out of the drag region and paints on the container color. */
+.titlebar-back {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  margin-right: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--monet-on-primary-container);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background-color 0.15s ease, transform 0.08s ease;
+}
+
+.titlebar-back:hover {
+  background: var(--monet-on-primary-container);
+  color: var(--monet-primary-container);
+}
+
+.titlebar-back:active {
+  transform: scale(0.92);
+}
+
+.titlebar-text-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+  height: 28px;
+  margin-right: 6px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--monet-on-primary-container);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.titlebar-text-button:hover {
+  background: var(--monet-on-primary-container);
+  color: var(--monet-primary-container);
 }
 
 .titlebar-controls {
   display: flex;
+  align-items: center;
   -webkit-app-region: no-drag;
 }
 
@@ -252,38 +307,14 @@ body {
   min-height: 0;
 }
 
-/* Full-window page (non-home): the Decorator cell with a top navigation bar,
-   replacing the persistent sidebar like HMCL's Controllers.navigate(). */
+/* Full-window page (non-home): the Decorator cell. Back arrow and title now
+   live in the window title bar, so this is just the content host. */
 .decorated-page {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   background: var(--monet-surface);
-}
-
-.nav-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-  height: 52px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--monet-outline-variant);
-}
-
-.nav-back {
-  background: transparent;
-}
-
-.nav-back:hover {
-  color: var(--monet-primary);
-}
-
-.nav-bar-title {
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--monet-on-surface);
 }
 
 .nav-bar-spacer {
@@ -2751,6 +2782,38 @@ html.transparent-bg .launcher-bg::after {
   font-family: monospace;
 }
 
+/* Controls placed directly in a .settings-row (not wrapped in a
+   .settings-row-control) get the same chrome. min-width:0 is required so a
+   flex item may shrink below its longest <option> and not overflow at 800px. */
+.settings-row > select,
+.settings-row > input[type='text'],
+.settings-row > input[type='number'],
+.settings-row > textarea {
+  flex: 1 1 240px;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--monet-outline-variant);
+  background: var(--monet-surface);
+  color: var(--monet-on-surface);
+  font-size: 14px;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+
+.settings-row > select:focus,
+.settings-row > input:focus,
+.settings-row > textarea:focus {
+  outline: none;
+  border-color: var(--monet-primary);
+  box-shadow: 0 0 0 2px var(--monet-primary-container);
+}
+
+.settings-row > textarea {
+  resize: vertical;
+  min-height: 60px;
+  font-family: monospace;
+}
+
 .radio-option {
   display: flex;
   align-items: center;
@@ -2828,6 +2891,8 @@ html.transparent-bg .launcher-bg::after {
 }
 
 /* ===== Instance management page (HMCL GameInstancePage) ===== */
+/* Left 200px column = scrolling tab drawer on top + pinned action toolbar at
+   the bottom (184px = 40*4 + 12*2), center hosts the active tab. */
 .instance-manage-page {
   flex: 1;
   min-width: 0;
@@ -2846,34 +2911,154 @@ html.transparent-bg .launcher-bg::after {
   min-height: 0;
 }
 
-.instances-page-nav {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--monet-outline-variant);
-  background: var(--monet-surface-container-low);
-}
-
 .instance-manage-body {
   flex: 1;
   display: flex;
   min-height: 0;
 }
 
-.instance-manage-body .dl-sidebar {
+.instance-manage-sidebar {
   width: 200px;
   flex-shrink: 0;
-  overflow-y: auto;
-  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* Overrides .dl-sidebar's bottom padding so the pinned toolbar is flush. */
+  padding: 0;
   border-right: 1px solid var(--monet-outline-variant);
   background: var(--monet-surface-container-low);
 }
 
-.instance-manage-body .dl-main {
+.instance-tabs {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 0 0;
+}
+
+.instance-tabs .advanced-list-item {
+  gap: 10px;
+  padding: 10px 16px;
+  font-size: 13px;
+}
+
+.instance-toolbar {
+  flex-shrink: 0;
+  height: 184px;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 0;
+}
+
+.instance-toolbar-item {
+  height: 40px;
+  flex-shrink: 0;
+  gap: 10px;
+  padding: 0 16px;
+  font-size: 13px;
+}
+
+.instance-toolbar-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.instance-toolbar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.advanced-list-item-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.advanced-list-item-label {
   min-width: 0;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Popups anchor below their toolbar row, left-aligned to it (JFXPopup
+   BOTTOM/LEFT, width = the item's width). */
+.instance-popup {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  z-index: 200;
+  min-width: 200px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 4px 0;
+  border-radius: 10px;
+  border: 1px solid var(--monet-outline-variant);
+  background: var(--monet-surface-container-lowest);
+  box-shadow: var(--monet-shadow);
+  list-style: none;
+  animation: popup-in 0.14s ease-out;
+}
+
+@keyframes popup-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.instance-popup li button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 16px;
+  border: none;
+  background: none;
+  color: var(--monet-on-surface);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.instance-popup li button:hover {
+  background: var(--monet-surface-container-high);
+}
+
+.instance-popup li button.delete {
+  color: var(--monet-error);
+}
+
+.instance-popup li .menu-separator,
+.instance-popup li.menu-separator {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--monet-outline-variant);
+}
+
+.instance-manage-main {
+  overflow: hidden;
+}
+
+/* Tab switches replay HMCL's SLIDE_UP_FADE_IN. */
+.instance-tab-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  animation: tab-in 0.24s cubic-bezier(0.22, 0.9, 0.36, 1);
+}
+
+@keyframes tab-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .instance-manage-body .settings-page-body {
@@ -2908,52 +3093,6 @@ html.transparent-bg .launcher-bg::after {
 
 .dropdown-wrap {
   position: relative;
-}
-
-.instance-context-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 200;
-  min-width: 180px;
-  max-height: 60vh;
-  overflow-y: auto;
-  padding: 6px;
-  border-radius: 10px;
-  border: 1px solid var(--monet-outline-variant);
-  background: var(--monet-surface-container-low);
-  box-shadow: var(--monet-shadow);
-  list-style: none;
-}
-
-.instance-context-menu li button {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--monet-on-surface);
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.instance-context-menu li button:hover {
-  background: var(--monet-surface-container-high);
-}
-
-.instance-context-menu li button.delete {
-  color: #b3261e;
-}
-
-.instance-context-menu li .menu-separator,
-.instance-context-menu li.menu-separator {
-  height: 1px;
-  margin: 6px 4px;
-  background: var(--monet-outline-variant);
 }
 
 .folder-list-toolbar {

@@ -24,21 +24,28 @@ import type {
 import {
   ArrowForwardIcon,
   ArrowUpIcon,
+  BugIcon,
   CloseIcon,
   CoffeeIcon,
   ContentCopyIcon,
   DeleteForeverIcon,
+  DeployedCodeFillIcon,
+  DeployedCodeIcon,
   DownloadIcon,
   ExtensionFillIcon,
   ExtensionIcon,
+  FolderCopyIcon,
+  FolderOpenIcon,
   GameIcon,
   GamepadFillIcon,
   GamepadIcon,
   InfoIcon,
   ListIcon,
   MaximizeIcon,
+  MenuIcon,
   MicrosoftIcon,
   MinimizeIcon,
+  OutputIcon,
   PackageFillIcon,
   PackageIcon,
   PaletteIcon,
@@ -48,6 +55,11 @@ import {
   RefreshIcon,
   RestoreIcon,
   RocketIcon,
+  SchemaFillIcon,
+  SchemaIcon,
+  ScreenshotIcon,
+  ScriptIcon,
+  SettingsFillIcon,
   SettingsIcon,
   SunnyFillIcon,
   SunnyIcon,
@@ -394,7 +406,7 @@ export function Shell(): React.JSX.Element | null {
   // halo on the nearest interactive host when it is pressed.
   const applyRipple = (event: React.PointerEvent): void => {
     const host = (event.target as HTMLElement).closest<HTMLElement>(
-      '.nav-item, .text-button, .raised-button, .menu-button, .launch-button, .advanced-list-item, .java-list li'
+      '.nav-item, .text-button, .raised-button, .menu-button, .launch-button, .advanced-list-item, .java-list li, .titlebar-text-button'
     );
     if (host === null || (host as HTMLButtonElement).disabled) return;
     const rect = host.getBoundingClientRect();
@@ -427,6 +439,25 @@ export function Shell(): React.JSX.Element | null {
     state.accounts[0]?.username ??
     state.settings.playerName;
 
+  // Shared title-bar navigation (HMCL MainWindowPane): a single top bar carries
+  // the optional back arrow, the page title, and the window controls. The home
+  // page is the root (no back arrow); every other view is one level deep.
+  const isManaging = state.managingId !== undefined;
+  const titleText = isManaging
+    ? `实例管理 - ${state.managingId}`
+    : page === 'home'
+      ? 'HMCL'
+      : page === 'download' && downloadDetail !== undefined
+        ? downloadDetail.title
+        : PAGE_TITLES[page];
+  const navBack = isManaging
+    ? () => state.setManagingId(undefined)
+    : page !== 'home'
+      ? page === 'download' && downloadDetail !== undefined
+        ? () => setDownloadDetail(undefined)
+        : () => setPage('home')
+      : undefined;
+
   return (
     <div
       className="root-shell"
@@ -448,9 +479,30 @@ export function Shell(): React.JSX.Element | null {
       )}
       <div className="titlebar">
         <div className="titlebar-drag">
-          <span className="titlebar-title">HMCL</span>
+          {navBack !== undefined && (
+            <button
+              className="titlebar-back"
+              aria-label="返回"
+              title="返回"
+              onClick={navBack}
+            >
+              <ArrowBackIcon size={20} />
+            </button>
+          )}
+          <span className="titlebar-title">{titleText}</span>
         </div>
         <div className="titlebar-controls">
+          {navBack !== undefined && (
+            <button
+              className="titlebar-text-button"
+              title="日志"
+              aria-label="日志"
+              onClick={() => setLogOpen((open) => !open)}
+            >
+              <TerminalIcon size={15} />
+              日志
+            </button>
+          )}
           <button
             className="titlebar-button"
             title="最小化"
@@ -558,30 +610,6 @@ export function Shell(): React.JSX.Element | null {
           </>
         ) : (
           <div className="decorated-page">
-            <div className="nav-bar">
-              <button
-                className="icon-button nav-back"
-                title={page === 'download' && downloadDetail !== undefined ? '返回' : '返回首页'}
-                aria-label="返回"
-                onClick={
-                  page === 'download' && downloadDetail !== undefined
-                    ? () => setDownloadDetail(undefined)
-                    : () => setPage('home')
-                }
-              >
-                <ArrowBackIcon size={20} />
-              </button>
-              <span className="nav-bar-title">
-                {page === 'download' && downloadDetail !== undefined
-                  ? downloadDetail.title
-                  : PAGE_TITLES[page]}
-              </span>
-              <span className="nav-bar-spacer" />
-              <button className="text-button" onClick={() => setLogOpen((open) => !open)}>
-                <TerminalIcon size={15} />
-                日志
-              </button>
-            </div>
             <main className="content">
               <div className="page-stage" key={page === 'download' && downloadDetail !== undefined ? `download-detail-${downloadDetail.slug}` : page}>
                 {page === 'accounts' && <AccountsPage state={pageProps} />}
@@ -2058,27 +2086,35 @@ function InstanceSettingsPanel({
 
 type InstanceTab = 'settings' | 'installers' | 'mods' | 'resourcepacks' | 'worlds' | 'schematics';
 
-const INSTANCE_TABS: { id: InstanceTab; label: string; icon: React.JSX.Element }[] = [
-  { id: 'settings', label: '游戏设置', icon: <SettingsIcon size={20} /> },
-  { id: 'installers', label: '自动安装', icon: <DownloadIcon size={20} /> },
-  { id: 'mods', label: '模组管理', icon: <ExtensionIcon size={20} /> },
-  { id: 'resourcepacks', label: '资源包管理', icon: <TextureIcon size={20} /> },
-  { id: 'worlds', label: '世界管理', icon: <PublicIcon size={20} /> },
-  { id: 'schematics', label: '原理图管理', icon: <ListIcon size={20} /> }
+// The drawer items are the tabs (HMCL renders no visible tab bar; the six
+// navigation-drawer rows *are* the TabHeader). Each carries an outlined and a
+// filled glyph so the active row can cross-fade, as addNavigationDrawerTab does.
+const INSTANCE_TABS: {
+  id: InstanceTab;
+  label: string;
+  icon: React.JSX.Element;
+  activeIcon: React.JSX.Element;
+}[] = [
+  { id: 'settings', label: '游戏设置', icon: <SettingsIcon size={20} />, activeIcon: <SettingsFillIcon size={20} /> },
+  { id: 'installers', label: '自动安装', icon: <DeployedCodeIcon size={20} />, activeIcon: <DeployedCodeFillIcon size={20} /> },
+  { id: 'mods', label: '模组管理', icon: <ExtensionIcon size={20} />, activeIcon: <ExtensionFillIcon size={20} /> },
+  { id: 'resourcepacks', label: '资源包管理', icon: <TextureIcon size={20} />, activeIcon: <TextureIcon size={20} /> },
+  { id: 'worlds', label: '世界管理', icon: <PublicIcon size={20} />, activeIcon: <PublicIcon size={20} /> },
+  { id: 'schematics', label: '原理图管理', icon: <SchemaIcon size={20} />, activeIcon: <SchemaFillIcon size={20} /> }
 ];
 
-/** 浏览 submenu targets, mirroring GameInstancePage.Skin's browseList. */
-const INSTANCE_BROWSE_TARGETS: { label: string; folder: InstanceFolder }[] = [
-  { label: '实例运行文件夹', folder: '' },
-  { label: '模组文件夹', folder: 'mods' },
-  { label: '资源包文件夹', folder: 'resourcepacks' },
-  { label: '世界文件夹', folder: 'saves' },
-  { label: '原理图文件夹', folder: 'schematics' },
-  { label: '光影包文件夹', folder: 'shaderpacks' },
-  { label: '截图文件夹', folder: 'screenshots' },
-  { label: '配置文件夹', folder: 'config' },
-  { label: '日志文件夹', folder: 'logs' },
-  { label: '崩溃报告文件夹', folder: 'crash-reports' }
+/** 浏览 submenu targets, mirroring GameInstancePage.Skin's browseList (icon + label). */
+const INSTANCE_BROWSE_TARGETS: { label: string; folder: InstanceFolder; icon: React.JSX.Element }[] = [
+  { label: '实例运行文件夹', folder: '', icon: <GamepadIcon size={20} /> },
+  { label: '模组文件夹', folder: 'mods', icon: <ExtensionIcon size={20} /> },
+  { label: '资源包文件夹', folder: 'resourcepacks', icon: <TextureIcon size={20} /> },
+  { label: '世界文件夹', folder: 'saves', icon: <PublicIcon size={20} /> },
+  { label: '原理图文件夹', folder: 'schematics', icon: <SchemaIcon size={20} /> },
+  { label: '光影包文件夹', folder: 'shaderpacks', icon: <SunnyIcon size={20} /> },
+  { label: '截图文件夹', folder: 'screenshots', icon: <ScreenshotIcon size={20} /> },
+  { label: '配置文件夹', folder: 'config', icon: <SettingsIcon size={20} /> },
+  { label: '日志文件夹', folder: 'logs', icon: <ScriptIcon size={20} /> },
+  { label: '崩溃报告文件夹', folder: 'crash-reports', icon: <BugIcon size={20} /> }
 ];
 
 function InstanceManagePage({ state }: StateHookProps): React.JSX.Element {
@@ -2112,8 +2148,6 @@ function InstanceManagePage({ state }: StateHookProps): React.JSX.Element {
         state.setBusy(false);
       });
   };
-
-  const close = (): void => state.setManagingId(undefined);
 
   const renameInstance = async (): Promise<void> => {
     if (renameTarget === undefined || renameValue === '') return;
@@ -2166,151 +2200,177 @@ function InstanceManagePage({ state }: StateHookProps): React.JSX.Element {
 
   return (
     <div className="instance-manage-page">
-      <div className="instances-page-nav">
-        <button className="icon-button" title="返回" onClick={close}>
-          <ArrowBackIcon size={20} />
-        </button>
-        <span className="nav-bar-title">实例管理 - {instanceId}</span>
-        <span className="nav-bar-spacer" />
-        <button className="text-button" title="更新整合包" disabled>
-          <UpdateIcon size={15} /> 更新整合包
-        </button>
-        <button className="text-button" disabled={state.busy} onClick={() => void launchTest()}>
-          <RocketIcon size={15} /> 测试游戏
-        </button>
-        <div className="dropdown-wrap">
-          <button
-            className="text-button"
-            onClick={() => {
-              setBrowseOpen((open) => !open);
-              setManageOpen(false);
-            }}
-          >
-            <ArrowForwardIcon size={15} /> 浏览
-          </button>
-          {browseOpen && (
-            <ul className="dropdown-menu instance-context-menu">
-              {INSTANCE_BROWSE_TARGETS.map((target) => (
-                <li key={target.folder}>
-                  <button
-                    onClick={() => {
-                      setBrowseOpen(false);
-                      void hmcl().openInstanceFolder(instanceId, target.folder);
-                    }}
-                  >
-                    {target.label}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <div className="dropdown-wrap">
-          <button
-            className="text-button"
-            onClick={() => {
-              setManageOpen((open) => !open);
-              setBrowseOpen(false);
-            }}
-          >
-            <MoreVertIcon size={15} /> 管理
-          </button>
-          {manageOpen && (
-            <ul className="dropdown-menu instance-context-menu">
-              <li>
-                <button onClick={() => { setManageOpen(false); void launchTest(); }}>
-                  <RocketIcon size={15} /> 测试游戏
-                </button>
-              </li>
-              <li className="menu-separator" />
-              <li>
-                <button onClick={() => { setManageOpen(false); setRenameTarget(instanceId); setRenameValue(instanceId); }}>
-                  <EditIcon size={15} /> 重命名该实例
-                </button>
-              </li>
-              <li>
-                <button onClick={() => { setManageOpen(false); void duplicateInstance(); }}>
-                  <ContentCopyIcon size={15} /> 复制游戏实例
-                </button>
-              </li>
-              <li>
-                <button className="delete" onClick={() => { setManageOpen(false); setDeleteTarget(instanceId); }}>
-                  <DeleteForeverIcon size={15} /> 删除该实例
-                </button>
-              </li>
-              <li className="menu-separator" />
-              <li>
-                <button onClick={() => { setManageOpen(false); void clearAssets(); }}>
-                  删除所有游戏资源文件
-                </button>
-              </li>
-              <li>
-                <button onClick={() => { setManageOpen(false); void hmcl().clearLibraries(); }}>
-                  删除所有库文件
-                </button>
-              </li>
-              <li>
-                <button onClick={() => { setManageOpen(false); void hmcl().cleanInstance(instanceId); }}>
-                  清理游戏文件夹
-                </button>
-              </li>
-            </ul>
-          )}
-        </div>
-      </div>
-
       <div className="instance-manage-body">
-        <aside className="dl-sidebar">
-          {INSTANCE_TABS.map((item) => (
+        <aside className="dl-sidebar instance-manage-sidebar">
+          <div className="instance-tabs" role="tablist" aria-label="实例管理">
+            {INSTANCE_TABS.map((item) => (
+              <button
+                key={item.id}
+                role="tab"
+                aria-selected={tab === item.id}
+                className={`advanced-list-item${tab === item.id ? ' selected' : ''}`}
+                onClick={() => setTab(item.id)}
+              >
+                <span className="advanced-list-item-icon">
+                  {tab === item.id ? item.activeIcon : item.icon}
+                </span>
+                <span className="advanced-list-item-label">{item.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Pinned bottom toolbar (HMCL AdvancedListBox, height 40*4 + 12*2 = 184). */}
+          <div className="instance-toolbar">
             <button
-              key={item.id}
-              className={`advanced-list-item${tab === item.id ? ' selected' : ''}`}
-              onClick={() => setTab(item.id)}
+              className="advanced-list-item instance-toolbar-item"
+              title="更新整合包"
+              disabled
             >
-              {item.icon}
-              {item.label}
+              <span className="advanced-list-item-icon"><UpdateIcon size={20} /></span>
+              <span className="advanced-list-item-label">更新整合包</span>
             </button>
-          ))}
+            <button
+              className="advanced-list-item instance-toolbar-item"
+              disabled={state.busy}
+              onClick={() => void launchTest()}
+            >
+              <span className="advanced-list-item-icon"><RocketIcon size={20} /></span>
+              <span className="advanced-list-item-label">测试游戏</span>
+            </button>
+            <div className="instance-toolbar-wrap">
+              <button
+                className="advanced-list-item instance-toolbar-item"
+                aria-haspopup="menu"
+                aria-expanded={browseOpen}
+                onClick={() => {
+                  setBrowseOpen((open) => !open);
+                  setManageOpen(false);
+                }}
+              >
+                <span className="advanced-list-item-icon"><FolderOpenIcon size={20} /></span>
+                <span className="advanced-list-item-label">浏览</span>
+              </button>
+              {browseOpen && (
+                <ul className="dropdown-menu instance-popup" role="menu">
+                  {INSTANCE_BROWSE_TARGETS.map((target) => (
+                    <li key={target.folder}>
+                      <button
+                        role="menuitem"
+                        onClick={() => {
+                          setBrowseOpen(false);
+                          void hmcl().openInstanceFolder(instanceId, target.folder);
+                        }}
+                      >
+                        {target.icon}
+                        {target.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="instance-toolbar-wrap">
+              <button
+                className="advanced-list-item instance-toolbar-item"
+                aria-haspopup="menu"
+                aria-expanded={manageOpen}
+                onClick={() => {
+                  setManageOpen((open) => !open);
+                  setBrowseOpen(false);
+                }}
+              >
+                <span className="advanced-list-item-icon"><MenuIcon size={20} /></span>
+                <span className="advanced-list-item-label">管理</span>
+              </button>
+              {manageOpen && (
+                <ul className="dropdown-menu instance-popup" role="menu">
+                  <li>
+                    <button role="menuitem" onClick={() => { setManageOpen(false); void launchTest(); }}>
+                      <RocketIcon size={20} /> 测试游戏
+                    </button>
+                  </li>
+                  <li className="menu-separator" />
+                  <li>
+                    <button role="menuitem" onClick={() => { setManageOpen(false); setRenameTarget(instanceId); setRenameValue(instanceId); }}>
+                      <EditIcon size={20} /> 重命名该实例
+                    </button>
+                  </li>
+                  <li>
+                    <button role="menuitem" onClick={() => { setManageOpen(false); void duplicateInstance(); }}>
+                      <FolderCopyIcon size={20} /> 复制游戏实例
+                    </button>
+                  </li>
+                  <li>
+                    <button role="menuitem" className="delete" onClick={() => { setManageOpen(false); setDeleteTarget(instanceId); }}>
+                      <DeleteForeverIcon size={20} /> 删除该实例
+                    </button>
+                  </li>
+                  <li className="menu-separator" />
+                  <li>
+                    <button role="menuitem" onClick={() => { setManageOpen(false); void clearAssets(); }}>
+                      删除所有游戏资源文件
+                    </button>
+                  </li>
+                  <li>
+                    <button role="menuitem" onClick={() => { setManageOpen(false); void hmcl().clearLibraries(); }}>
+                      删除所有库文件
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      role="menuitem"
+                      title="清理 logs 和 crash-reports 文件夹"
+                      onClick={() => { setManageOpen(false); void hmcl().cleanInstance(instanceId); }}
+                    >
+                      清理游戏文件夹
+                    </button>
+                  </li>
+                </ul>
+              )}
+            </div>
+          </div>
         </aside>
-        <main className="dl-main">
-          {tab === 'settings' && <InstanceSettingsPanel instanceId={instanceId} key={instanceId} />}
-          {tab === 'installers' && <InstallersTab state={state} instanceId={instanceId} key={instanceId} />}
-          {tab === 'mods' && (
-            <FolderListTab instanceId={instanceId} folder="mods" title="模组管理" subtitle=".jar / .disabled 文件" />
-          )}
-          {tab === 'resourcepacks' && (
-            <FolderListTab instanceId={instanceId} folder="resourcepacks" title="资源包管理" subtitle=".zip / 文件夹" />
-          )}
-          {tab === 'worlds' && (
-            <FolderListTab instanceId={instanceId} folder="saves" title="世界管理" subtitle="世界文件夹" />
-          )}
-          {tab === 'schematics' && (
-            <FolderListTab instanceId={instanceId} folder="schematics" title="原理图管理" subtitle=".nbt / .schem / .schematic" />
-          )}
+        <main className="dl-main instance-manage-main">
+          <div className="instance-tab-stage" key={tab}>
+            {tab === 'settings' && <InstanceSettingsPanel instanceId={instanceId} key={instanceId} />}
+            {tab === 'installers' && <InstallersTab state={state} instanceId={instanceId} key={instanceId} />}
+            {tab === 'mods' && (
+              <FolderListTab instanceId={instanceId} folder="mods" title="模组管理" subtitle=".jar / .disabled 文件" />
+            )}
+            {tab === 'resourcepacks' && (
+              <FolderListTab instanceId={instanceId} folder="resourcepacks" title="资源包管理" subtitle=".zip / 文件夹" />
+            )}
+            {tab === 'worlds' && (
+              <FolderListTab instanceId={instanceId} folder="saves" title="世界管理" subtitle="世界文件夹" />
+            )}
+            {tab === 'schematics' && (
+              <FolderListTab instanceId={instanceId} folder="schematics" title="原理图管理" subtitle=".nbt / .schem / .schematic" />
+            )}
+          </div>
         </main>
       </div>
 
       {renameTarget !== undefined && (
-        <div className="sheet-backdrop">
-          <div className="sheet">
-            <div className="card-title">重命名实例</div>
-            <div className="installer-row">
-              <span>请输入要修改的名称：</span>
-              <input
-                value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') void renameInstance(); }}
-              />
-            </div>
-            <div className="sheet-actions">
-              <button onClick={() => { setRenameTarget(undefined); setRenameValue(''); }}>取消</button>
-              <button className="raised-button" onClick={() => void renameInstance()}>确定</button>
+        <>
+          <div className="sheet-backdrop">
+            <div className="sheet">
+              <div className="card-title">重命名实例</div>
+              <div className="installer-row">
+                <span>请输入要修改的名称：</span>
+                <input
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') void renameInstance(); }}
+                />
+              </div>
+              <div className="sheet-actions">
+                <button onClick={() => { setRenameTarget(undefined); setRenameValue(''); }}>取消</button>
+                <button className="raised-button" onClick={() => void renameInstance()}>确定</button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-      {renameTarget !== undefined && (
-        <button className="menu-backdrop" aria-label="关闭" onClick={() => setRenameTarget(undefined)} />
+          <button className="menu-backdrop" aria-label="关闭" onClick={() => setRenameTarget(undefined)} />
+        </>
       )}
 
       {deleteTarget !== undefined && (
