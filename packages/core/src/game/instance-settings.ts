@@ -120,6 +120,24 @@ export async function writeInstanceSettings(
 }
 
 /**
+ * The game directory an instance actually uses, and therefore the directory
+ * holding its mods, resource packs, shader packs, worlds and saves.
+ *
+ * Version-isolated instances get their own directory under the version root;
+ * every other instance shares the repository root, which is where a vanilla
+ * `.minecraft` keeps those files.
+ *
+ * The addon installer and the instance's folder management both have to agree
+ * on this. When they disagreed, installing a resource pack into a global
+ * instance wrote it to the shared directory while 资源包管理 listed the version
+ * root — so a successful install looked like it had done nothing at all.
+ */
+export async function resolveGameDir(repo: GameRepository, versionId: string): Promise<string> {
+  const settings = await readInstanceSettings(repo, versionId);
+  return settings.gameDirType === 'instance' ? repo.versionRoot(versionId) : repo.rootDir;
+}
+
+/**
  * Splits a JVM argument string into tokens, honouring double-quoted groups
  * like HMCL's tokenizer.
  */

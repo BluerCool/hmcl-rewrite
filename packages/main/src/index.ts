@@ -35,6 +35,7 @@ import {
   parseOptiFineLoaderId,
   primaryFileOf,
   readInstanceSettings,
+  resolveGameDir,
   searchModrinthProjects,
   writeInstanceSettings,
   type DownloadProvider,
@@ -612,11 +613,17 @@ handle('addon:download', async (
   try {
     const repo = state.repository();
     await assertInstanceExists(repo, instanceId);
+    // The renderer shows a footer while this downloads, so it needs a stage to
+    // name. Without one it sat on whatever the status line said before — 空闲
+    // for an install that was plainly in progress.
+    broadcast({ kind: 'stage', launchId, stage: `installing-${subdir}` });
     await downloadAddonFile(repo, state.provider(), instanceId, subdir, toCoreModrinthVersion(version), (p) =>
       broadcast({ kind: 'download-progress', launchId, progress: p })
     );
+    broadcast({ kind: 'stage', launchId, stage: 'idle' });
     broadcast({ kind: 'download-settled', launchId, ok: true });
   } catch (e) {
+    broadcast({ kind: 'stage', launchId, stage: 'idle' });
     broadcast({ kind: 'download-settled', launchId, ok: false, error: String(e) });
     throw e;
   }
@@ -1125,9 +1132,20 @@ handle('instance-settings:set', async (id: string, settings: InstanceSettingsDto
 
 // ============ Instance folder & icon management ============
 
-/** Resolves an instance subfolder for the management tabs. */
-function instanceFolderPath(repo: GameRepository, instanceId: string, folder: string): string {
-  return folder === '' ? repo.versionRoot(instanceId) : join(repo.versionRoot(instanceId), folder);
+/**
+ * Resolves a folder inside the instance's game directory. It has to go through
+ * `resolveGameDir` rather than assuming the version root: a global instance
+ * keeps its mods and resource packs in the shared repository root, so hardcoding
+ * the version root listed (and deleted, and opened) a directory the installer
+ * never writes to.
+ */
+async function instanceFolderPath(
+  repo: GameRepository,
+  instanceId: string,
+  folder: string
+): Promise<string> {
+  const gameDir = await resolveGameDir(repo, instanceId);
+  return folder === '' ? gameDir : join(gameDir, folder);
 }
 
 handle(
@@ -1135,7 +1153,7 @@ handle(
   async (instanceId: string, folder: string): Promise<InstanceFolderEntryDto[]> => {
     const repo = state.repository();
     await assertInstanceExists(repo, instanceId);
-    const entries = await readdir(instanceFolderPath(repo, instanceId, folder), {
+    const entries = await readdir(await instanceFolderPath(repo, instanceId, folder), {
       withFileTypes: true
     }).catch(() => [] as import('node:fs').Dirent[]);
     return entries
@@ -1147,7 +1165,7 @@ handle(
 handle('instance:open-folder', async (instanceId: string, folder: string): Promise<void> => {
   const repo = state.repository();
   await assertInstanceExists(repo, instanceId);
-  const path = instanceFolderPath(repo, instanceId, folder);
+  const path = await instanceFolderPath(repo, instanceId, folder);
   await mkdir(path, { recursive: true });
   await shell.openPath(path);
 });
@@ -1155,7 +1173,8 @@ handle('instance:open-folder', async (instanceId: string, folder: string): Promi
 handle('instance:delete-file', async (instanceId: string, folder: string, name: string): Promise<void> => {
   const repo = state.repository();
   await assertInstanceExists(repo, instanceId);
-  await rm(join(instanceFolderPath(repo, instanceId, folder), name), { recursive: true, force: true });
+  const dir = await instanceFolderPath(repo, instanceId, folder);
+  await rm(join(dir, name), { recursive: true, force: true });
 });
 
 handle('instance:clear-assets', async (instanceId: string): Promise<void> => {

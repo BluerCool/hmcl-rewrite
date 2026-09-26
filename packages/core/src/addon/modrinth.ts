@@ -8,7 +8,7 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type DownloadProgress, Downloader } from '../download/downloader.js';
 import type { DownloadProvider } from '../download/mirrors.js';
-import { readInstanceSettings } from '../game/instance-settings.js';
+import { resolveGameDir } from '../game/instance-settings.js';
 import type { GameRepository } from '../game/repository.js';
 export type ModrinthProjectType = 'mod' | 'modpack' | 'resourcepack' | 'shader';
 
@@ -325,11 +325,9 @@ export async function downloadAddonFile(
   if (file === undefined) throw new Error('该版本没有可下载的文件');
 
   // Version-isolated instances keep addons inside the version root; global
-  // instances share the repository root — the same rule the launcher applies.
-  const settings = await readInstanceSettings(repo, instanceId);
-  const runDir =
-    settings.gameDirType === 'instance' ? repo.versionRoot(instanceId) : repo.rootDir;
-  const targetDir = join(runDir, subdir);
+  // instances share the repository root — the same rule the launcher applies,
+  // and the same one 资源包管理 lists, so the file shows up where it landed.
+  const targetDir = join(await resolveGameDir(repo, instanceId), subdir);
   await mkdir(targetDir, { recursive: true });
   await new Downloader({
     concurrency: provider.concurrency,

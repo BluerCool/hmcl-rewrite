@@ -1502,6 +1502,29 @@ body {
   word-break: break-all;
 }
 
+/* Shown while an addon downloads. The version dialog holds its buttons until
+   the file lands, so this is the only sign anything is happening in place. */
+.install-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--monet-on-surface-variant);
+}
+
+.install-progress .spinner {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}
+
+.install-error-log {
+  display: block;
+  margin-top: 4px;
+  padding: 0;
+}
+
 .sheet-actions {
   display: flex;
   justify-content: flex-end;
@@ -1680,17 +1703,22 @@ body {
   cursor: default;
 }
 
+/* Anchored to the window, not to whatever raised it: the toast lives in the
+   shell now, and an install failure shows one while its dialog is still open.
+   Sits above the log drawer so a confirmation never hides behind the log it
+   just wrote, and above dialogs (50) so it is never occluded by one. */
 .toast {
-  position: absolute;
+  position: fixed;
   bottom: 28px;
   left: 50%;
   transform: translateX(-50%);
+  max-width: calc(100vw - 48px);
   background: #323232;
   color: #ffffff;
   font-size: 13px;
   padding: 10px 20px;
   border-radius: 8px;
-  z-index: 60;
+  z-index: 950;
   box-shadow: 0 6px 18px rgba(27, 27, 33, 0.35);
 }
 
@@ -1988,6 +2016,13 @@ body {
     animation: none;
     width: 100%;
     opacity: 0.4;
+  }
+
+  /* Without the spin the addon install dialog would just show a static ring, so
+     lean on the accompanying text label to carry the "in progress" meaning. */
+  .install-progress .spinner {
+    animation: none;
+    border-top-color: var(--monet-primary);
   }
 }
 

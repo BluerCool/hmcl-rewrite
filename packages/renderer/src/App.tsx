@@ -152,12 +152,26 @@ export function useLauncherState() {
   const [downloading, setDownloading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
+  const [toast, setToast] = useState<string | undefined>(undefined);
   const [deviceCode, setDeviceCode] = useState<MicrosoftDeviceCodeDto | undefined>(undefined);
   const [maximized, setMaximized] = useState(false);
 
   const finishTimer = useRef<number | undefined>(undefined);
   const stageTimer = useRef<number | undefined>(undefined);
+  const toastTimer = useRef<number | undefined>(undefined);
   const lastDownloadEvent = useRef<number>(0);
+
+  /**
+   * Shows a transient confirmation anywhere in the window. It lives here
+   * rather than in the dialog that raises it: a dialog unmounts the moment the
+   * user acts on it, so a local toast never got a chance to render.
+   */
+  const showToast = useCallback((message: string): void => {
+    setToast(message);
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(undefined), 2500);
+  }, []);
+  useEffect(() => () => window.clearTimeout(toastTimer.current), []);
 
   /**
    * Writes the status line. Transient statuses (a finished launch, a failure)
@@ -311,6 +325,8 @@ export function useLauncherState() {
     setBusy,
     logOpen,
     setLogOpen,
+    toast,
+    showToast,
     deviceCode,
     managingId,
     setManagingId,
@@ -332,6 +348,9 @@ const STAGE_LABELS: Record<string, string> = {
   'downloading-libraries': '下载依赖库',
   'downloading-assets': '下载游戏资源',
   'extracting-natives': '解压本地库',
+  'installing-mods': '正在安装模组',
+  'installing-resourcepacks': '正在安装资源包',
+  'installing-shaderpacks': '正在安装光影',
   starting: '正在启动',
   running: '游戏运行中'
 };
@@ -711,6 +730,10 @@ export function Shell(): React.JSX.Element | null {
           launch, whose only feedback is this drawer, stayed invisible exactly
           where launches are started. */}
       {state.logOpen && <LogDrawer state={pageProps} onClose={() => state.setLogOpen(false)} />}
+      {/* Toasts render here too, above every page and dialog. Raising one from a
+          dialog used to render it inside that dialog, so the note vanished the
+          instant the user clicked the button that produced it. */}
+      {state.toast !== undefined && <div className="toast">{state.toast}</div>}
     </div>
   );
 }
@@ -1122,6 +1145,8 @@ interface StateHook {
   setBusy: (busy: boolean) => void;
   logOpen: boolean;
   setLogOpen: (open: boolean | ((open: boolean) => boolean)) => void;
+  toast: string | undefined;
+  showToast: (message: string) => void;
   deviceCode: MicrosoftDeviceCodeDto | undefined;
   managingId: string | undefined;
   setManagingId: (id: string | undefined) => void;
@@ -3218,6 +3243,18 @@ function AddonDetailPage({
 }
 
 /**
+ * Electron wraps anything crossing the IPC boundary as
+ * `Error invoking remote method 'channel': <reason>`. The channel name tells a
+ * user nothing, and the doubled `Error:` reads like two separate problems, so
+ * strip the envelope before the reason reaches the screen.
+ */
+function describeInstallError(reason: unknown): string {
+  return String(reason)
+    .replace(/^Error: Error invoking remote method '[^']*':\s*/, '')
+    .replace(/^Error:\s*/, '');
+}
+
+/**
  * Version dialog mirroring `ui/instances/DownloadPage.AddonVersion`: changelog,
  * official page, dependencies and the 安装/另存为/取消 action bar.
  */
@@ -3234,23 +3271,45 @@ function AddonVersionDialog({
   onClose: () => void;
   onInstallModpack: (version: ModrinthVersionDto) => void;
 }): React.JSX.Element {
-  const { toast, showToast } = useToast();
+  const { showToast } = state;
   const isModpack = project.projectType === 'modpack';
   const primary = version.files.find((file) => file.primary) ?? version.files[0];
+  const [installing, setInstalling] = useState(false);
+  const [installError, setInstallError] = useState<string | undefined>(undefined);
+  const kind = project.projectType as DlAddonKind;
+  const kindLabel = ADDON_LABELS[kind] ?? '文件';
 
-  const installIntoInstance = (): void => {
+  const installIntoInstance = async (): Promise<void> => {
     if (state.currentId === undefined) {
       showToast('请先在首页创建或选择一个实例');
       return;
     }
-    const subdir = subdirForAddon(project.projectType as DlAddonKind);
-    onClose();
-    hmcl()
-      .downloadAddonFile(state.currentId, subdir, version)
-      .catch((reason: unknown) => {
-        state.appendLog({ text: String(reason), isError: true });
-        showToast('安装失败，请查看日志');
+    if (installing) return;
+    const subdir = subdirForAddon(kind);
+    setInstalling(true);
+    setInstallError(undefined);
+    try {
+      // The dialog used to close here, before the download had even started, so
+      // the "安装失败" note below was written into a component that no longer
+      // existed. A failed install therefore reported nothing at all. Stay open
+      // until the file has actually landed.
+      await hmcl().downloadAddonFile(state.currentId, subdir, version);
+      state.appendLog({
+        text: `>>> ${kindLabel}安装完成：${primary?.filename ?? version.name}`,
+        isError: false
       });
+      showToast(`${kindLabel}已安装到 ${state.currentId}`);
+      onClose();
+    } catch (reason) {
+      // Keep the dialog up and put the reason right where the user is looking,
+      // rather than closing it and hiding everything in a closed log drawer.
+      // The main process already reports this failure to the log through its
+      // download-settled event, so writing it again here would only duplicate
+      // the same line in a noisier form.
+      setInstallError(describeInstallError(reason));
+    } finally {
+      setInstalling(false);
+    }
   };
 
   const saveAs = (): void => {
@@ -3295,6 +3354,20 @@ function AddonVersionDialog({
             </div>
           )}
         </div>
+        {installing && (
+          <div className="install-progress">
+            <span className="spinner" />
+            正在安装{kindLabel}…
+          </div>
+        )}
+        {installError !== undefined && (
+          <div className="field-error install-error">
+            {kindLabel}安装失败：{installError}
+            <button className="text-button install-error-log" onClick={() => state.setLogOpen(true)}>
+              查看日志
+            </button>
+          </div>
+        )}
         <div className="sheet-actions">
           {isModpack ? (
             <button
@@ -3307,19 +3380,22 @@ function AddonVersionDialog({
               安装整合包
             </button>
           ) : (
-            <button className="raised-button" onClick={installIntoInstance}>
+            <button
+              className="raised-button"
+              onClick={() => void installIntoInstance()}
+              disabled={installing}
+            >
               安装
             </button>
           )}
-          <button className="raised-button" onClick={saveAs} disabled={primary === undefined}>
+          <button className="raised-button" onClick={saveAs} disabled={primary === undefined || installing}>
             另存为
           </button>
-          <button className="text-button" onClick={onClose}>
+          <button className="text-button" onClick={onClose} disabled={installing}>
             取消
           </button>
         </div>
       </div>
-      {toast !== undefined && <div className="toast">{toast}</div>}
     </div>
   );
 }
@@ -3784,18 +3860,6 @@ function InstallSheet({
       </div>
     </div>
   );
-}
-
-/** Transient toast helper mirroring existing in-page notification behavior. */
-function useToast(): { toast: string | undefined; showToast: (message: string) => void } {
-  const [toast, setToast] = useState<string | undefined>(undefined);
-  const timer = useRef<number | undefined>(undefined);
-  const showToast = (message: string): void => {
-    setToast(message);
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setToast(undefined), 2500);
-  };
-  return { toast, showToast };
 }
 
 // ----- Addon (模组/资源包/光影) browsing via Modrinth -----
