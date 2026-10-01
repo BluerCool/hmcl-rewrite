@@ -311,15 +311,12 @@ export type AddonSubdir = 'mods' | 'resourcepacks' | 'shaderpacks';
  * Downloads the primary file of a Modrinth version into a game directory's
  * addon folder (mods/resourcepacks/shaderpacks).
  *
- * `instanceId` is undefined for the 「默认（.minecraft 根目录）」 target, which
- * resolves to the shared repository root.
- *
  * @throws Error when the version carries no downloadable file
  */
 export async function downloadAddonFile(
   repo: GameRepository,
   provider: DownloadProvider,
-  instanceId: string | undefined,
+  instanceId: string,
   subdir: AddonSubdir,
   version: ModrinthVersion,
   onProgress?: (progress: DownloadProgress) => void

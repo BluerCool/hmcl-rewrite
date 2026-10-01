@@ -22,6 +22,16 @@ export interface InstalledVersionDto {
   type: string | undefined;
   /** Root vanilla game version this instance inherits from. */
   gameVersion: string;
+  /**
+   * Mod loaders this instance runs, as Modrinth loader slugs, read from the
+   * libraries of the whole `inheritsFrom` chain. Empty for vanilla instances.
+   */
+  loaders: string[];
+  /**
+   * Whether the instance keeps its files in its own version folder instead of
+   * the shared `.minecraft` root, i.e. HMCL's 版本隔离.
+   */
+  isolated: boolean;
 }
 
 /** A remote version from the manifest. */
@@ -309,13 +319,12 @@ export interface HmclApi {
   /** Lists versions of a Modrinth project (by slug or id). */
   fetchModrinthVersions(projectIdOrSlug: string): Promise<ModrinthVersionDto[]>;
   /**
-   * Downloads the primary file of a Modrinth version into a game directory's
-   * addon folder. An undefined `instanceId` targets the shared `.minecraft`
-   * root (the 「默认」 entry), any other id resolves that instance's own
-   * directory, which is its version root only when it is version-isolated.
+   * Downloads the primary file of a Modrinth version into an instance's addon
+   * folder. The instance's own directory is used, which is its version root only
+   * when it is version-isolated and the shared `.minecraft` root otherwise.
    */
   downloadAddonFile(
-    instanceId: string | undefined,
+    instanceId: string,
     subdir: AddonSubdir,
     version: ModrinthVersionDto
   ): Promise<void>;

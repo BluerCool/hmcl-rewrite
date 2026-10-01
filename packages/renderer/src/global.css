@@ -1506,7 +1506,8 @@ body {
 }
 
 /* Where the file will land, repeated in the dialog because the combo that
-   picked it lives on the page behind. */
+   picked it lives on the page behind. The directory is spelled out because
+   whether an instance keeps its own files is invisible everywhere else. */
 .install-target {
   display: flex;
   align-items: baseline;
@@ -1528,18 +1529,57 @@ body {
   word-break: break-all;
 }
 
+.install-target-dir {
+  display: block;
+  margin-top: 2px;
+  color: var(--monet-on-surface-variant);
+  font-family: 'Consolas', 'Noto Sans Mono', monospace;
+  font-size: 12px;
+  font-weight: 400;
+}
+
 /* Shown while an addon downloads. The version dialog holds its buttons until
    the file lands, so this is the only sign anything is happening in place. */
-.install-progress {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
+.install-status {
+  margin-top: 12px;
   font-size: 13px;
   color: var(--monet-on-surface-variant);
 }
 
-.install-progress .spinner {
+.install-status-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.install-status-percent {
+  margin-left: auto;
+  color: var(--monet-primary);
+  font-weight: 600;
+}
+
+.install-bar {
+  height: 6px;
+  margin-top: 8px;
+  border-radius: 3px;
+  background: var(--monet-surface-container-high);
+  overflow: hidden;
+}
+
+.install-bar-fill {
+  height: 100%;
+  background: var(--monet-primary);
+  transition: width 120ms linear;
+}
+
+.install-status-meta {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.install-status .spinner {
   width: 14px;
   height: 14px;
   border-width: 2px;
@@ -2046,7 +2086,7 @@ body {
 
   /* Without the spin the addon install dialog would just show a static ring, so
      lean on the accompanying text label to carry the "in progress" meaning. */
-  .install-progress .spinner {
+  .install-status .spinner {
     animation: none;
     border-top-color: var(--monet-primary);
   }

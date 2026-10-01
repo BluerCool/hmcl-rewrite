@@ -39,6 +39,7 @@ import {
   searchModrinthProjects,
   writeInstanceSettings,
   type DownloadProvider,
+  type GameVersionJson,
   type InstanceSettings,
   type LaunchOptions,
   type ModrinthCategory,
@@ -221,28 +222,80 @@ handle('versions:list', async () => {
   const repo = state.repository();
   const versions = await repo.listInstalledVersions();
   const manifests = new Map(versions.map((version) => [version.id, version.manifest]));
-  return versions.map((version) => ({
-    id: version.id,
-    jar: version.manifest.jar ?? version.id,
-    type: version.manifest.type,
-    gameVersion: resolveGameVersion(version.id, manifests)
-  }));
+  return Promise.all(
+    versions.map(async (version) => ({
+      id: version.id,
+      jar: version.manifest.jar ?? version.id,
+      type: version.manifest.type,
+      gameVersion: resolveGameVersion(version.id, manifests),
+      loaders: resolveLoaders(version.id, manifests),
+      isolated: (await readInstanceSettings(repo, version.id)).gameDirType === 'instance'
+    }))
+  );
 });
+
+/** The `inheritsFrom` chain from `id` up to the root vanilla version, in order. */
+function inheritsChain(
+  id: string,
+  manifests: Map<string, GameVersionJson>
+): string[] {
+  const chain: string[] = [];
+  const seen = new Set<string>();
+  let current: string | undefined = id;
+  while (current !== undefined && current !== '' && !seen.has(current)) {
+    seen.add(current);
+    chain.push(current);
+    current = manifests.get(current)?.inheritsFrom;
+  }
+  return chain;
+}
 
 /** Walks the `inheritsFrom` chain to the root vanilla version id. */
 function resolveGameVersion(
   id: string,
-  manifests: Map<string, { inheritsFrom?: string }>
+  manifests: Map<string, GameVersionJson>
 ): string {
-  let current = id;
-  const seen = new Set<string>();
-  while (!seen.has(current)) {
-    seen.add(current);
-    const next = manifests.get(current)?.inheritsFrom;
-    if (next === undefined || next === '') return current;
-    current = next;
+  return inheritsChain(id, manifests).at(-1) ?? id;
+}
+
+/**
+ * Mod loaders an instance runs, as Modrinth loader slugs.
+ *
+ * Read from the libraries of the whole `inheritsFrom` chain, the same source
+ * HMCL's `getModLoaders` uses: a modpack like `ukuspvpmodpack` declares no
+ * loader of its own and only reveals Fabric through the version it inherits
+ * from, and matching on the instance name would have called that vanilla.
+ */
+function resolveLoaders(
+  id: string,
+  manifests: Map<string, GameVersionJson>
+): string[] {
+  const loaders: string[] = [];
+  for (const versionId of inheritsChain(id, manifests)) {
+    for (const library of manifests.get(versionId)?.libraries ?? []) {
+      const loader = loaderOfLibrary(library.name);
+      if (loader !== undefined && !loaders.includes(loader)) loaders.push(loader);
+    }
   }
-  return current;
+  return loaders;
+}
+
+/**
+ * Maps a `group:artifact` library to the loader slug a mod has to declare on
+ * Modrinth to be usable on it.
+ *
+ * NeoForge is decided before Forge because a NeoForge manifest still ships a
+ * couple of `net.minecraftforge` artifacts (srgutils), and OptiFine is left out
+ * entirely: it is a client-side patch rather than a Modrinth loader.
+ */
+function loaderOfLibrary(name: string): string | undefined {
+  const [group, artifact = ''] = name.split(':');
+  if (group?.startsWith('net.neoforged') || artifact.includes('neoforge')) return 'neoforge';
+  if (group === 'net.minecraftforge' && artifact.startsWith('forge')) return 'forge';
+  if (artifact === 'fabric-loader') return 'fabric';
+  if (group === 'org.quiltmc' && artifact.startsWith('quilt')) return 'quilt';
+  if (artifact === 'liteloader') return 'liteloader';
+  return undefined;
 }
 
 handle('versions:remote', async () => {
@@ -609,16 +662,14 @@ handle('modrinth:versions', async (projectIdOrSlug: string) => {
 });
 
 handle('addon:download', async (
-  instanceId: string | undefined,
+  instanceId: string,
   subdir: AddonSubdir,
   version: ModrinthVersionDto
 ) => {
   const launchId = -1;
   try {
     const repo = state.repository();
-    // undefined means the 「默认（.minecraft 根目录）」 target, which belongs to
-    // no instance in particular and therefore skips the existence check.
-    if (instanceId !== undefined) await assertInstanceExists(repo, instanceId);
+    await assertInstanceExists(repo, instanceId);
     // The renderer shows a footer while this downloads, so it needs a stage to
     // name. Without one it sat on whatever the status line said before — 空闲
     // for an install that was plainly in progress.

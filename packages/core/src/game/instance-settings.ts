@@ -132,14 +132,8 @@ export async function writeInstanceSettings(
  * instance wrote it to the shared directory while 资源包管理 listed the version
  * root — so a successful install looked like it had done nothing at all.
  *
- * `versionId` is undefined for the 「默认（.minecraft 根目录）」 install target,
- * which means the shared root no matter which instance happens to be selected.
  */
-export async function resolveGameDir(
-  repo: GameRepository,
-  versionId: string | undefined
-): Promise<string> {
-  if (versionId === undefined) return repo.rootDir;
+export async function resolveGameDir(repo: GameRepository, versionId: string): Promise<string> {
   const settings = await readInstanceSettings(repo, versionId);
   return settings.gameDirType === 'instance' ? repo.versionRoot(versionId) : repo.rootDir;
 }
