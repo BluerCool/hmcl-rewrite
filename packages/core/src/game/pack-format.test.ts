@@ -7,7 +7,8 @@ import {
   isPackCompatible,
   packCompatibilityNote,
   readPackMetadata,
-  requiredResourceFormat
+  requiredResourceFormat,
+  supportedFormatRange
 } from './pack-format.js';
 import { GameRepository } from './repository.js';
 
@@ -46,15 +47,21 @@ describe('reading pack metadata', () => {
     expect(await readPackMetadata(await packZip('a.zip', { pack_format: 34 }))).toEqual({ packFormat: 34 });
   });
 
-  it('reads a supported_formats range', async () => {
+  it('reads a supported_formats object', async () => {
     const meta = await readPackMetadata(
       await packZip('b.zip', { pack_format: 15, supported_formats: { min_inclusive: 15, max_inclusive: 40 } })
     );
-    expect(meta?.supportedFormats).toEqual({ minInclusive: 15, maxInclusive: 40 });
+    expect(meta?.supportedFormats).toEqual({ min: 15, max: 40 });
   });
 
-  it('ignores a non-standard supported_formats array, which no client reads', async () => {
-    const meta = await readPackMetadata(await packZip('c.zip', { pack_format: 8, supported_formats: [8, 99] }));
+  it('reads the two-element supported_formats array form too', async () => {
+    // Packs ship both spellings; HMCL reads both, so this must too.
+    const meta = await readPackMetadata(await packZip('c.zip', { pack_format: 34, supported_formats: [18, 22] }));
+    expect(meta?.supportedFormats).toEqual({ min: 18, max: 22 });
+  });
+
+  it('leaves out a supported_formats it cannot make sense of', async () => {
+    const meta = await readPackMetadata(await packZip('c2.zip', { pack_format: 8, supported_formats: [8, 99, 100] }));
     expect(meta?.supportedFormats).toBeUndefined();
   });
 
@@ -126,12 +133,36 @@ describe('deciding whether the game would load a pack', () => {
   });
 
   it('accepts a pack whose supported_formats covers the game', () => {
-    expect(isPackCompatible({ packFormat: 15, supportedFormats: { minInclusive: 15, maxInclusive: 40 } }, 34)).toBe(true);
+    expect(
+      isPackCompatible({ packFormat: 15, supportedFormats: { min: 15, max: 40 } }, 34)
+    ).toBe(true);
+  });
+
+  it('accepts the array form of supported_formats', () => {
+    // "Low On Fire 26.2" as shipped: pack_format 15 plus a 15..200 range.
+    expect(
+      isPackCompatible(
+        { packFormat: 15, supportedFormats: { min: 15, max: 200 }, minFormat: 15, maxFormat: 200 },
+        34
+      )
+    ).toBe(true);
+  });
+
+  it('rejects a pack whose own fields contradict each other', () => {
+    // "Low On Fire 1.21": pack_format 34 lines up with 1.21.1, but the pack
+    // itself says it only serves 18..22. Taking pack_format at face value is how
+    // this pack gets installed and then does nothing.
+    expect(isPackCompatible({ packFormat: 34, supportedFormats: { min: 18, max: 22 } }, 34)).toBe(false);
+  });
+
+  it('rejects a range reaching past any real resource pack format', () => {
+    // "Low On Fire 1.21.3" declares 1.21.1 support, then asks for 0..99.
+    expect(isPackCompatible({ packFormat: 34, supportedFormats: { min: 0, max: 99 } }, 34)).toBe(false);
   });
 
   it('rejects an empty or inverted supported_formats range', () => {
     // Faithful 32x ships exactly this for its 1.21.1 file.
-    expect(isPackCompatible({ supportedFormats: { minInclusive: 34, maxInclusive: 33 } }, 34)).toBe(false);
+    expect(isPackCompatible({ supportedFormats: { min: 34, max: 33 } }, 34)).toBe(false);
   });
 
   it('rejects a pack built for a newer game', () => {
@@ -162,5 +193,71 @@ describe('explaining the verdict', () => {
 
   it('has nothing to say about a usable pack', () => {
     expect(packCompatibilityNote({ packFormat: 34 }, 34)).toBeUndefined();
+  });
+
+  it('names the range the pack claims, not the field that looks right', () => {
+    // The 18~22 is what the pack itself serves, so it is the honest thing to
+    // show; the note that pack_format disagrees explains why 34 is not used.
+    expect(packCompatibilityNote({ packFormat: 34, supportedFormats: { min: 18, max: 22 } }, 34)).toBe(
+      '这个包声明的格式 18~22（声明与 pack_format 矛盾），你的游戏需要 34，游戏会拒绝加载它'
+    );
+  });
+
+  it('calls out a format no released game ever used', () => {
+    expect(packCompatibilityNote({ packFormat: 97 }, 34)).toContain('不是有效的资源包格式');
+  });
+
+  it('says when the pack contradicts itself', () => {
+    expect(packCompatibilityNote({ packFormat: 8, supportedFormats: { min: 1, max: 2 } }, 34)).toContain(
+      '声明与 pack_format 矛盾'
+    );
+  });
+});
+
+describe('the range a pack declares', () => {
+  it('is just the one format when it claims nothing wider', () => {
+    expect(supportedFormatRange({ packFormat: 34 })).toEqual({ min: 34, max: 34 });
+  });
+
+  it('takes the new scheme when min/max and supported_formats agree', () => {
+    expect(
+      supportedFormatRange({
+        packFormat: 15,
+        supportedFormats: { min: 15, max: 200 },
+        minFormat: 15,
+        maxFormat: 200
+      })
+    ).toEqual({ min: 15, max: 200 });
+  });
+
+  it('accepts a new-scheme max of 64 as "and everything newer"', () => {
+    expect(
+      supportedFormatRange({
+        packFormat: 40,
+        supportedFormats: { min: 40, max: 64 },
+        minFormat: 40,
+        maxFormat: 200
+      })
+    ).toEqual({ min: 40, max: 200 });
+  });
+
+  it('rejects a new-scheme range the supported_formats disagrees with', () => {
+    expect(
+      supportedFormatRange({
+        packFormat: 15,
+        supportedFormats: { min: 16, max: 200 },
+        minFormat: 15,
+        maxFormat: 200
+      })
+    ).toBeUndefined();
+  });
+
+  it('rejects an inverted new-scheme range', () => {
+    expect(supportedFormatRange({ minFormat: 200, maxFormat: 15 })).toBeUndefined();
+  });
+
+  it('has no range to give for a pack with no metadata at all', () => {
+    expect(supportedFormatRange(undefined)).toBeUndefined();
+    expect(supportedFormatRange({})).toBeUndefined();
   });
 });

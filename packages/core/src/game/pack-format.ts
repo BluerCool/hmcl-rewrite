@@ -2,32 +2,46 @@
  * Whether a resource pack can be loaded by a given game version.
  *
  * A downloaded pack sitting in `resourcepacks/` says nothing about whether the
- * game will use it: the client only loads packs whose declared format matches
- * its own, and silently refuses the others — they show up in the game's list
- * marked incompatible and never apply. Since Modrinth's own `game_versions` and
- * a pack's `pack.mcmeta` disagree in practice, the file itself is the only
- * trustworthy answer.
+ * game will use it: the client loads only packs whose declared format covers its
+ * own and refuses the rest, so they show up in the game's list marked
+ * incompatible and never apply. Modrinth's `game_versions` and a pack's own
+ * `pack.mcmeta` disagree often enough that the file is the only answer worth
+ * trusting — "Low On Fire 1.21.3" declares 1.21.1 support, for instance, and its
+ * metadata then rules it out.
  *
- * The rules below mirror what the client does, in the order the client does
- * them: `pack_format` decides, `supported_formats` widens it, and the
- * `min_format`/`max_format` scheme that arrived in 1.21.9 is unreadable to
- * anything older.
+ * The rule below is HMCL's `ResourcePackManager.getResourcePackVersionRangeNew`
+ * translated to numbers, including its details that decide real cases: both
+ * spellings of `supported_formats` are read, a range reaching past 64 is thrown
+ * away as nonsense, and `pack_format` has to fall inside the range the pack
+ * claims rather than being taken at face value.
  */
 import { readFile } from 'node:fs/promises';
 import { strFromU8, unzipSync } from 'fflate';
-import { join } from 'node:path';
 
 import type { GameRepository } from './repository.js';
+
+/**
+ * Formats past this are not resource pack formats any released game used, so a
+ * range that reaches beyond it is a pack author writing nonsense. HMCL draws the
+ * same line, and it is what makes an array like `[0, 99]` unusable.
+ */
+const MAX_SANE_FORMAT = 64;
 
 /** What a pack declares about itself in `pack.mcmeta`. */
 export interface PackMetadata {
   /** `pack_format`: the field every version up to 1.21.8 reads. */
   packFormat?: number;
-  /** `supported_formats` as an object; understood from 1.20.3 on. */
-  supportedFormats?: { minInclusive: number; maxInclusive: number };
-  /** `min_format` / `max_format`, the 1.21.9+ scheme. */
+  /** `supported_formats`, in either the object or the two-element array form. */
+  supportedFormats?: { min: number; max: number };
+  /** `min_format` / `max_format`, the scheme that arrived in 1.21.9. */
   minFormat?: number;
   maxFormat?: number;
+}
+
+/** The formats a pack declares itself loadable by, if its claims hold up. */
+export interface FormatRange {
+  min: number;
+  max: number;
 }
 
 /** Reads `pack.mcmeta` out of a pack zip. */
@@ -57,19 +71,14 @@ export async function readPackMetadata(zipPath: string): Promise<PackMetadata | 
   }
 
   const metadata: PackMetadata = {};
-  if (typeof pack.pack_format === 'number') metadata.packFormat = pack.pack_format;
-  const min = numberOf(pack.min_format);
-  const max = numberOf(pack.max_format);
-  if (min !== undefined) metadata.minFormat = min;
-  if (max !== undefined) metadata.maxFormat = max;
-  const supported = pack.supported_formats;
-  if (typeof supported === 'object' && supported !== null && !Array.isArray(supported)) {
-    const minInclusive = numberOf((supported as Record<string, unknown>).min_inclusive);
-    const maxInclusive = numberOf((supported as Record<string, unknown>).max_inclusive);
-    if (minInclusive !== undefined && maxInclusive !== undefined) {
-      metadata.supportedFormats = { minInclusive, maxInclusive };
-    }
-  }
+  const packFormat = numberOf(pack.pack_format);
+  if (packFormat !== undefined) metadata.packFormat = packFormat;
+  const minFormat = numberOf(pack.min_format);
+  if (minFormat !== undefined) metadata.minFormat = minFormat;
+  const maxFormat = numberOf(pack.max_format);
+  if (maxFormat !== undefined) metadata.maxFormat = maxFormat;
+  const supported = readSupportedFormats(pack.supported_formats);
+  if (supported !== undefined) metadata.supportedFormats = supported;
   return metadata;
 }
 
@@ -100,6 +109,103 @@ export async function requiredResourceFormat(
   return undefined;
 }
 
+/**
+ * The formats a pack accepts, or undefined when its own claims contradict each
+ * other. Mirrors HMCL's `getResourcePackVersionRangeNew`: the 1.21.9 min/max
+ * scheme has to agree with `supported_formats` and with `pack_format`, and the
+ * older `pack_format` may not sit outside the range the pack declares.
+ */
+export function supportedFormatRange(metadata: PackMetadata | undefined): FormatRange | undefined {
+  if (metadata === undefined) return undefined;
+  const { packFormat, supportedFormats, minFormat, maxFormat } = metadata;
+
+  if (minFormat === undefined || maxFormat === undefined) {
+    // Old scheme: a single format, optionally widened by supported_formats.
+    if (supportedFormats !== undefined) {
+      if (supportedFormats.max > MAX_SANE_FORMAT) return undefined;
+      if (packFormat === undefined) return undefined;
+      if (packFormat < supportedFormats.min || packFormat > supportedFormats.max) return undefined;
+      return supportedFormats;
+    }
+    if (packFormat === undefined || packFormat > MAX_SANE_FORMAT) return undefined;
+    return { min: packFormat, max: packFormat };
+  }
+
+  // New scheme: 1.21.9+ pairs, which still have to agree with the old fields.
+  if (minFormat > maxFormat) return undefined;
+  if (minFormat > MAX_SANE_FORMAT) {
+    if (supportedFormats !== undefined) return undefined;
+    if (packFormat !== undefined && (packFormat < minFormat || packFormat > maxFormat)) return undefined;
+  } else {
+    if (supportedFormats === undefined) return undefined;
+    if (supportedFormats.min !== minFormat) return undefined;
+    // A max of 64 is HMCL's "and everything above it" marker.
+    if (supportedFormats.max !== maxFormat && supportedFormats.max !== MAX_SANE_FORMAT) return undefined;
+    if (packFormat === undefined) return undefined;
+    if (packFormat < minFormat || packFormat > maxFormat) return undefined;
+  }
+  return { min: minFormat, max: maxFormat };
+}
+
+/**
+ * Whether the game would load the pack. An unknown answer on either side counts
+ * as loadable: claiming a pack is broken without being able to prove it would be
+ * worse than staying quiet.
+ */
+export function isPackCompatible(
+  metadata: PackMetadata | undefined,
+  required: number | undefined
+): boolean {
+  if (required === undefined) return true;
+  const range = supportedFormatRange(metadata);
+  if (range === undefined) return metadata !== undefined ? false : true;
+  return required >= range.min && required <= range.max;
+}
+
+/** One-line reason for the tooltip, or undefined when the pack looks fine. */
+export function packCompatibilityNote(
+  metadata: PackMetadata | undefined,
+  required: number | undefined
+): string | undefined {
+  if (isPackCompatible(metadata, required)) return undefined;
+  if (required === undefined) return '无法确定这个游戏版本需要的资源包格式';
+  if (metadata === undefined) {
+    return `读不出这个包的 pack.mcmeta，你的游戏需要格式 ${required}，游戏会拒绝加载它`;
+  }
+  const range = supportedFormatRange(metadata);
+  const declared = ((): string => {
+    if (range !== undefined) {
+      const span = range.min === range.max ? String(range.min) : `${range.min}~${range.max}`;
+      // A range taken from min/max means the pack only speaks the 1.21.9
+      // dialect, which is worth spelling out: it is why the numbers look odd.
+      return metadata.packFormat === undefined ? `${span}（新版格式写法）` : span;
+    }
+    if (metadata.supportedFormats !== undefined) {
+      return `${metadata.supportedFormats.min}~${metadata.supportedFormats.max}（声明与 pack_format 矛盾）`;
+    }
+    if (metadata.packFormat !== undefined) return `${metadata.packFormat}（不是有效的资源包格式）`;
+    return '未知';
+  })();
+  return `这个包声明的格式 ${declared}，你的游戏需要 ${required}，游戏会拒绝加载它`;
+}
+
+/** `supported_formats` as written by packs in the wild: object or [min, max]. */
+function readSupportedFormats(value: unknown): { min: number; max: number } | undefined {
+  if (Array.isArray(value) && value.length === 2) {
+    const min = numberOf(value[0]);
+    const max = numberOf(value[1]);
+    if (min !== undefined && max !== undefined) return { min, max };
+    return undefined;
+  }
+  if (typeof value === 'object' && value !== null) {
+    const record = value as Record<string, unknown>;
+    const min = numberOf(record.min_inclusive);
+    const max = numberOf(record.max_inclusive);
+    if (min !== undefined && max !== undefined) return { min, max };
+  }
+  return undefined;
+}
+
 async function formatOfJar(jarPath: string): Promise<number | undefined> {
   let entries: Record<string, Uint8Array>;
   try {
@@ -121,59 +227,6 @@ async function formatOfJar(jarPath: string): Promise<number | undefined> {
   } catch {
     return undefined;
   }
-}
-
-/**
- * Whether the game would load the pack. An unknown answer on either side counts
- * as loadable: claiming a pack is broken without being able to prove it would be
- * worse than staying quiet.
- */
-export function isPackCompatible(
-  metadata: PackMetadata | undefined,
-  required: number | undefined
-): boolean {
-  if (metadata === undefined || required === undefined) return true;
-  if (metadata.supportedFormats !== undefined) {
-    const { minInclusive, maxInclusive } = metadata.supportedFormats;
-    return required >= minInclusive && required <= maxInclusive;
-  }
-  if (metadata.packFormat === undefined) {
-    // Only the 1.21.9+ min/max scheme: a client that needs a plain number
-    // cannot parse the metadata at all.
-    return false;
-  }
-  return metadata.packFormat === required;
-}
-
-/** One-line reason for the tooltip, or undefined when the pack looks fine. */
-export function packCompatibilityNote(
-  metadata: PackMetadata | undefined,
-  required: number | undefined
-): string | undefined {
-  if (isPackCompatible(metadata, required)) return undefined;
-  if (required === undefined) return '无法确定这个游戏版本需要的资源包格式';
-  const declared =
-    metadata?.supportedFormats !== undefined
-      ? `${metadata.supportedFormats.minInclusive}~${metadata.supportedFormats.maxInclusive}`
-      : metadata?.packFormat !== undefined
-        ? String(metadata.packFormat)
-        : metadata?.minFormat !== undefined
-          ? `${metadata.minFormat}+（新版格式写法）`
-          : '未知';
-  return `这个包声明的格式 ${declared}，你的游戏需要 ${required}，游戏会拒绝加载它`;
-}
-
-/** Number of the instance the resource pack folder belongs to, for messages. */
-export function describePackFormat(metadata: PackMetadata | undefined): string {
-  if (metadata === undefined) return '未知';
-  if (metadata.packFormat !== undefined) return String(metadata.packFormat);
-  if (metadata.minFormat !== undefined) return `${metadata.minFormat}+`;
-  return '未知';
-}
-
-/** Convenience: the game directory's jar for a version, kept for callers. */
-export function versionJarOf(repo: GameRepository, versionId: string): string {
-  return join(repo.versionJar(versionId));
 }
 
 function numberOf(value: unknown): number | undefined {
