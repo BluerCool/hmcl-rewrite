@@ -49,6 +49,8 @@ const api: HmclApi = {
     ipcRenderer.invoke('instance:open-folder', instanceId, folder),
   deleteInstanceFile: (instanceId, folder, name) =>
     ipcRenderer.invoke('instance:delete-file', instanceId, folder, name),
+  setResourcePackEnabled: (instanceId, name, enabled) =>
+    ipcRenderer.invoke('instance:set-resource-pack-enabled', instanceId, name, enabled),
   readInstanceIcon: (instanceId) => ipcRenderer.invoke('instance:icon-read', instanceId),
   pickInstanceIcon: (instanceId) => ipcRenderer.invoke('instance:icon-pick', instanceId),
   clearInstanceIcon: (instanceId) => ipcRenderer.invoke('instance:icon-clear', instanceId),

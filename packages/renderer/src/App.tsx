@@ -2622,6 +2622,29 @@ function FolderListTab({
     reload();
   };
 
+  // A resource pack in the folder is inert until options.txt lists it, which is
+  // why the row carries a switch: without one the only way to make a freshly
+  // downloaded pack take effect is to enable it inside the running game.
+  const isResourcePackFolder = folder === 'resourcepacks';
+  const [toggleError, setToggleError] = useState<string | undefined>(undefined);
+
+  const toggleEnabled = async (entry: InstanceFolderEntryDto): Promise<void> => {
+    setToggleError(undefined);
+    setEntries((current) =>
+      current.map((item) => (item.name === entry.name ? { ...item, enabled: !item.enabled } : item))
+    );
+    try {
+      await hmcl().setResourcePackEnabled(instanceId, entry.name, !entry.enabled);
+    } catch (reason) {
+      // Put the row back the way the file still has it rather than leaving a
+      // switch that lies about the game's state.
+      setEntries((current) =>
+        current.map((item) => (item.name === entry.name ? { ...item, enabled: entry.enabled } : item))
+      );
+      setToggleError(describeInstallError(reason));
+    }
+  };
+
   return (
     <div className="settings-scroll">
       <SettingsTabHeader title={title} subtitle={subtitle} />
@@ -2644,8 +2667,23 @@ function FolderListTab({
           <ul className="folder-list">
             {entries.map((entry) => (
               <li key={entry.name} className="folder-list-item">
-                <span className="folder-list-icon">{entry.isDirectory ? <GameIcon size={18} /> : <ListIcon size={18} />}</span>
-                <span className="folder-list-name">{entry.name}</span>
+                {isResourcePackFolder && !entry.isDirectory ? (
+                  <label className="folder-list-switch" title={entry.enabled ? '已启用' : '已禁用'}>
+                    <input
+                      type="checkbox"
+                      checked={entry.enabled}
+                      onChange={() => void toggleEnabled(entry)}
+                    />
+                    <span className="folder-list-name">{entry.name}</span>
+                  </label>
+                ) : (
+                  <>
+                    <span className="folder-list-icon">
+                      {entry.isDirectory ? <GameIcon size={18} /> : <ListIcon size={18} />}
+                    </span>
+                    <span className="folder-list-name">{entry.name}</span>
+                  </>
+                )}
                 <span className="secondary">{entry.isDirectory ? '文件夹' : '文件'}</span>
                 <button
                   className="icon-button"
@@ -2660,6 +2698,7 @@ function FolderListTab({
           </ul>
         )}
       </div>
+      {toggleError !== undefined && <div className="field-error">{toggleError}</div>}
       {confirmName !== undefined && (
         <>
           <div className="sheet-backdrop">

@@ -65,6 +65,11 @@ export type InstanceFolder =
 export interface InstanceFolderEntryDto {
   name: string;
   isDirectory: boolean;
+  /**
+   * Whether the game is told to load this resource pack. Meaningful only for
+   * resource packs; every other folder reports false.
+   */
+  enabled: boolean;
 }
 
 /** Modrinth project types surfaced in the download page. */
@@ -292,6 +297,12 @@ export interface HmclApi {
   openInstanceFolder(instanceId: string, folder: InstanceFolder): Promise<void>;
   /** Deletes a file or directory inside an instance folder. */
   deleteInstanceFile(instanceId: string, folder: InstanceFolder, name: string): Promise<void>;
+  /**
+   * Turns a resource pack on or off for an instance, writing the pack lists in
+   * its options.txt. Only meaningful for `resourcepacks`; the game ignores a
+   * downloaded pack it has not been told to load.
+   */
+  setResourcePackEnabled(instanceId: string, name: string, enabled: boolean): Promise<void>;
   /** Returns the instance icon as a data URL, or undefined when unset. */
   readInstanceIcon(instanceId: string): Promise<string | undefined>;
   /** Picks an image; copies it into the instance as its icon. */

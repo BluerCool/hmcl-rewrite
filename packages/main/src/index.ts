@@ -18,6 +18,7 @@ import {
   createOfflineProfile,
   detectJavaRuntimes,
   downloadAddonFile,
+  enabledResourcePacks,
   fetchFabricLoaders,
   fetchForgeBuilds,
   fetchModrinthCategories,
@@ -35,8 +36,12 @@ import {
   parseOptiFineLoaderId,
   primaryFileOf,
   readInstanceSettings,
+  readGameOptions,
   resolveGameDir,
   searchModrinthProjects,
+  setResourcePackEnabled,
+  supportsNewOptionsFormat,
+  writeGameOptions,
   writeInstanceSettings,
   type DownloadProvider,
   type GameVersionJson,
@@ -1210,12 +1215,46 @@ handle(
   async (instanceId: string, folder: string): Promise<InstanceFolderEntryDto[]> => {
     const repo = state.repository();
     await assertInstanceExists(repo, instanceId);
-    const entries = await readdir(await instanceFolderPath(repo, instanceId, folder), {
+    const gameDir = await resolveGameDir(repo, instanceId);
+    const entries = await readdir(folder === '' ? gameDir : join(gameDir, folder), {
       withFileTypes: true
     }).catch(() => [] as import('node:fs').Dirent[]);
+    // Only resource packs have a per-file on/off state, and only the game reads
+    // it: a pack missing from options.txt is never loaded no matter what is in
+    // the folder, which is what "装完游戏里没反应" looked like.
+    const enabled =
+      folder === 'resourcepacks'
+        ? new Set(enabledResourcePacks((await readGameOptions(gameDir)).entries))
+        : undefined;
     return entries
-      .map((entry) => ({ name: entry.name, isDirectory: entry.isDirectory() }))
+      .map((entry) => ({
+        name: entry.name,
+        isDirectory: entry.isDirectory(),
+        enabled: enabled !== undefined && enabled.has(entry.name)
+      }))
       .sort((a, b) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : (a.isDirectory ? -1 : 1)));
+  }
+);
+
+/**
+ * Turns a resource pack on or off for an instance by rewriting the pack lists in
+ * its options.txt — the same switch HMCL's resource pack page offers, since a
+ * downloaded pack is otherwise inert until the game is told to load it.
+ */
+handle(
+  'instance:set-resource-pack-enabled',
+  async (instanceId: string, name: string, enabled: boolean): Promise<void> => {
+    const repo = state.repository();
+    await assertInstanceExists(repo, instanceId);
+    const gameDir = await resolveGameDir(repo, instanceId);
+    const options = await readGameOptions(gameDir);
+    const manifests = new Map(
+      (await repo.listInstalledVersions()).map((version) => [version.id, version.manifest])
+    );
+    const gameVersion = resolveGameVersion(instanceId, manifests);
+    if (setResourcePackEnabled(options.entries, name, enabled, supportsNewOptionsFormat(gameVersion))) {
+      await writeGameOptions(gameDir, options);
+    }
   }
 );
 

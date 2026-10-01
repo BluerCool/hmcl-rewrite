@@ -3288,3 +3288,64 @@ html.transparent-bg .launcher-bg::after {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* A resource pack row leads with its switch instead of the file icon, matching
+   HMCL's resource pack list: the on/off state is the first thing to read. */
+.folder-list-switch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.folder-list-switch input[type='checkbox'] {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  width: 34px;
+  height: 18px;
+  flex: 0 0 34px;
+  margin: 0;
+  padding: 0;
+  border: 2px solid var(--monet-outline);
+  border-radius: 9px;
+  background-color: var(--monet-surface-container-high);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.folder-list-switch input[type='checkbox']::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: var(--monet-outline);
+  transform: translateY(-50%);
+  transition: left 0.15s ease, background-color 0.15s ease;
+}
+
+.folder-list-switch input[type='checkbox']:hover {
+  border-color: var(--monet-primary);
+}
+
+.folder-list-switch input[type='checkbox']:checked {
+  background-color: var(--monet-primary);
+  border-color: var(--monet-primary);
+}
+
+.folder-list-switch input[type='checkbox']:checked::after {
+  left: 18px;
+  background-color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .folder-list-switch input[type='checkbox'],
+  .folder-list-switch input[type='checkbox']::after {
+    transition: none;
+  }
+}
