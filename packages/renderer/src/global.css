@@ -19,6 +19,7 @@
   --monet-error: #ba1a1a;
   --monet-error-container: #ffdad6;
   --monet-on-error-container: #93000a;
+  --monet-on-error: #ffffff;
   --monet-primary-fixed-dim: #bac3ff;
   --monet-on-primary-fixed: #00105b;
   --monet-tertiary-fixed-dim: #f6bd58;
@@ -519,6 +520,29 @@ body {
 .launch-text .secondary {
   font-size: 12px;
   opacity: 0.85;
+}
+
+/* Sits left of the launch button, so that button squares off its left corners
+   whenever this one is showing. Destructive, hence the error colour: ending a
+   game is the one thing on this pane that cannot be undone. */
+.stop-game-button {
+  width: 44px;
+  border: none;
+  cursor: pointer;
+  background: var(--monet-error-container);
+  color: var(--monet-on-error-container);
+  display: grid;
+  place-items: center;
+  border-radius: 8px 0 0 8px;
+}
+
+.stop-game-button:hover {
+  background: var(--monet-error);
+  color: var(--monet-on-error);
+}
+
+.stop-game-button + .launch-button {
+  border-radius: 0;
 }
 
 .menu-button {

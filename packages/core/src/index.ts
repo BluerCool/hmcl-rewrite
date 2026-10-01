@@ -32,4 +32,5 @@ export * from './launch/options.js';
 export * from './launch/command.js';
 export * from './launch/natives.js';
 export * from './launch/launcher.js';
+export * from './launch/stop.js';
 export * from './java/detect.js';

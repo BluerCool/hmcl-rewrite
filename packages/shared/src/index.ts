@@ -288,7 +288,13 @@ export type LauncherEvent =
   | { kind: 'download-progress'; launchId: number; progress: DownloadProgressDto }
   | { kind: 'download-settled'; launchId: number; ok: boolean; error?: string }
   | { kind: 'output'; launchId: number; line: string; isError: boolean }
-  | { kind: 'exit'; launchId: number; code: number | null }
+  /**
+   * The game process ended.
+   *
+   * `stopped` says the end was asked for rather than the game's own doing, so
+   * a user who pressed 结束游戏 is not shown a crash notice afterwards.
+   */
+  | { kind: 'exit'; launchId: number; code: number | null; stopped?: boolean }
   | { kind: 'microsoft-device-code'; code: MicrosoftDeviceCodeDto }
   | { kind: 'microsoft-login-result'; ok: boolean; message: string }
   | { kind: 'window-maximized'; maximized: boolean };
@@ -368,6 +374,11 @@ export interface HmclApi {
   saveSettings(settings: Partial<SettingsDto>): Promise<SettingsDto>;
   launch(versionId: string): Promise<number>;
   cancelLaunch(launchId: number): Promise<boolean>;
+  /**
+   * Ends a game that is already running: SIGTERM first, then SIGKILL if it is
+   * still alive five seconds later. Nothing to end means false.
+   */
+  stopGame(launchId: number): Promise<boolean>;
   /** Opens an https URL in the system browser. */
   openExternal(url: string): Promise<void>;
   listAccounts(): Promise<AccountDto[]>;

@@ -55,7 +55,8 @@ import {
   type ModrinthProject,
   type ModrinthProjectType,
   type ModrinthVersion,
-  type ResolvedVersion
+  type ResolvedVersion,
+  type RunningGame
 } from '@hmcl/core';
 import type {
   AccountDto,
@@ -118,6 +119,16 @@ class AppState {
   settings: SettingsDto = { ...DEFAULT_SETTINGS };
   readonly accounts = new AccountStore(join(app.getPath('userData'), 'accounts.json'));
   readonly runningLaunches = new Map<number, AbortController>();
+  /**
+   * Games that have been spawned, keyed by launch id.
+   *
+   * A launch id covers both the preparation and the run, and only the second
+   * half has a process to end — the abort controllers above stop downloads,
+   * these stop a running JVM.
+   */
+  readonly runningGames = new Map<number, RunningGame>();
+  /** Launches the user asked to end, so their exit is not read as a crash. */
+  readonly stoppedLaunches = new Set<number>();
   launchIdCounter = 1;
 
   /** Allocates a monotonically increasing launch id. */
@@ -585,12 +596,22 @@ handle('launch:start', async (versionId: string) => {
     if (event.type === 'exit' && reopenOnExit && win !== null && !win.isDestroyed()) {
       win.show();
     }
-    broadcast({ kind: event.type, launchId, ...(event as object) });
+    // A game killed on request exits with no code, which the renderer would
+    // otherwise report as a crash the user never caused.
+    const stopped = event.type === 'exit' && state.stoppedLaunches.has(launchId);
+    if (event.type === 'exit') {
+      // The launch promise settled when the process was spawned, so this is
+      // the first moment the game is really over.
+      state.runningGames.delete(launchId);
+      state.stoppedLaunches.delete(launchId);
+    }
+    broadcast({ kind: event.type, launchId, ...(event as object), stopped });
   };
 
   void launcher
     .launch(resolved, auth, effectiveOptions, (event) => onLauncherEvent(event as { type: string }))
-    .then(() => {
+    .then((game) => {
+      state.runningGames.set(launchId, game);
       if (win !== null) {
         if (reopenOnExit || visibility === 'hide') {
           win.hide();
@@ -608,7 +629,13 @@ handle('launch:start', async (versionId: string) => {
       });
       broadcast({ kind: 'exit', launchId, code: -1 });
     })
-    .finally(() => state.runningLaunches.delete(launchId));
+    .finally(() => {
+      // Only the preparation is over: the promise settles as soon as the
+      // process is spawned, so the handle for ending the game has to stay.
+      // runningGames is cleared by the exit event instead.
+      state.runningLaunches.delete(launchId);
+      state.stoppedLaunches.delete(launchId);
+    });
 
   return launchId;
 });
@@ -618,6 +645,18 @@ handle('launch:cancel', (launchId: number) => {
   if (abort === undefined) return false;
   abort.abort();
   state.runningLaunches.delete(launchId);
+  return true;
+});
+
+/**
+ * Ends a running game. Answers `false` when there is nothing to end, which is
+ * the normal case before the process is spawned and after it has exited.
+ */
+handle('launch:stop', async (launchId: number) => {
+  const game = state.runningGames.get(launchId);
+  if (game === undefined) return false;
+  state.stoppedLaunches.add(launchId);
+  await game.stop();
   return true;
 });
 

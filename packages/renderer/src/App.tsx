@@ -155,6 +155,8 @@ export function useLauncherState() {
   const [toast, setToast] = useState<string | undefined>(undefined);
   const [deviceCode, setDeviceCode] = useState<MicrosoftDeviceCodeDto | undefined>(undefined);
   const [maximized, setMaximized] = useState(false);
+  /** The launch whose game process is up, once the stage event says so. */
+  const [runningGameId, setRunningGameId] = useState<number | undefined>(undefined);
 
   const finishTimer = useRef<number | undefined>(undefined);
   const stageTimer = useRef<number | undefined>(undefined);
@@ -235,11 +237,28 @@ export function useLauncherState() {
     setLogOpen(true);
   };
 
+  /**
+   * Ends the running game. No confirmation: the user is looking at a game they
+   * want gone, and the main process already gives it a chance to save first.
+   */
+  const stopGame = async (): Promise<void> => {
+    if (runningGameId === undefined) return;
+    const stopped = await hmcl().stopGame(runningGameId);
+    if (!stopped) return;
+    appendLog({ text: '>>> 请求结束游戏进程', isError: false });
+    // The exit event clears busy and runningGameId on its own; the stage line
+    // waits for it too, so nothing here should claim the game is already gone.
+    setTransientStage('正在结束游戏进程…');
+  };
+
   const subscribeEvents = (): (() => void) =>
     hmcl().onEvent((event: LauncherEvent) => {
       switch (event.kind) {
         case 'stage':
           setStageText(STAGE_LABELS[event.stage] ?? event.stage);
+          // 'running' is the only stage with a process behind it, so it is what
+          // decides whether 结束游戏 has something to end.
+          setRunningGameId(event.stage === 'running' ? event.launchId : undefined);
           break;
         case 'download-progress':
           setProgress(event.progress);
@@ -262,20 +281,32 @@ export function useLauncherState() {
           break;
         case 'exit':
           setBusy(false);
-          if (event.code === 0) {
+          setRunningGameId(undefined);
+          // The launch pane falls back to 启动游戏 the moment busy clears, so a
+          // stage line about the game ending would never be read. A toast is the
+          // one notice that survives that.
+          if (event.stopped === true) {
+            // Ended on request: a killed JVM reports no code, which would
+            // otherwise read as a crash the user just caused.
+            setTransientStage('已结束游戏进程');
+            showToast('已结束游戏进程');
+          } else if (event.code === 0) {
             setTransientStage('游戏已退出');
+            showToast('游戏已退出');
           } else if (event.code === -1) {
             // The main process maps a failed launch to -1 and puts the reason
             // in the log, so open the drawer instead of leaving a bare -1 on
             // screen. This is the failure path that actually fires: a launch
             // that blows up never rejects launch:start.
             setTransientStage('启动失败');
+            showToast('启动失败');
             setLogOpen(true);
           } else {
             // The game did start, then exited on its own. Its own output is
             // already in the log, so surface that too (HMCL does the same for
             // a crash) rather than only reporting a code.
             setTransientStage(`游戏已退出，退出码 ${String(event.code)}`);
+            showToast(`游戏已退出，退出码 ${String(event.code)}`);
             setLogOpen(true);
           }
           break;
@@ -336,6 +367,8 @@ export function useLauncherState() {
     refreshAccounts,
     appendLog,
     reportLaunchFailure,
+    runningGameId,
+    stopGame,
     subscribeEvents,
     setPage
   };
@@ -1176,6 +1209,9 @@ interface StateHook {
   refreshAccounts: () => Promise<void>;
   appendLog: (line: LogLine) => void;
   reportLaunchFailure: (error: unknown) => void;
+  /** Launch id of the game process currently up, undefined when none is. */
+  runningGameId: number | undefined;
+  stopGame: () => Promise<void>;
   setPage: (page: PageId) => void;
 }
 
@@ -1217,6 +1253,20 @@ function HomePage({ state }: StateHookProps): React.JSX.Element {
       </div>
 
       <div className="launch-pane">
+        {/* Only while a game is actually up: during the download stages there
+            is nothing to end, and a button that does nothing is worse than
+            none. Sits to the left of the launch button, which then squares off
+            its left corners. */}
+        {state.runningGameId !== undefined && (
+          <button
+            className="stop-game-button"
+            title="结束游戏进程"
+            aria-label="结束游戏进程"
+            onClick={() => void state.stopGame()}
+          >
+            <CloseIcon size={20} />
+          </button>
+        )}
         {menuOpen && (
           <ul className="version-popup">
             {state.installed.map((version) => (

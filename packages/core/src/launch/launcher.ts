@@ -15,6 +15,7 @@ import type { AuthInfo } from './auth.js';
 import { buildLaunchCommand, type LaunchCommand } from './command.js';
 import type { LaunchOptions } from './options.js';
 import { cleanNativesDirectory, extractNatives } from './natives.js';
+import { stopProcess } from './stop.js';
 
 /** Lifecycle stages reported while preparing a launch. */
 export type LaunchStage =
@@ -32,6 +33,20 @@ export type LaunchEvent =
   | { type: 'download-progress'; progress: DownloadProgress }
   | { type: 'output'; line: string; isError: boolean }
   | { type: 'exit'; code: number | null };
+
+/** A game that has been spawned and is still running. */
+export interface RunningGame {
+  /** The command the game was started with, for the log and for reporting. */
+  readonly command: LaunchCommand;
+  /** Process id, undefined when the platform did not report one. */
+  readonly pid: number | undefined;
+  /**
+   * Asks the game to close: SIGTERM first, then SIGKILL if it is still alive
+   * `graceMs` later. Resolves once the process is gone, or at once if it has
+   * already exited. Idempotent, so a second click costs nothing.
+   */
+  stop(graceMs?: number): Promise<void>;
+}
 
 /**
  * Prepares and launches a resolved version.
@@ -123,7 +138,7 @@ export class Launcher {
     auth: AuthInfo,
     options: LaunchOptions,
     onEvent: (event: LaunchEvent) => void
-  ): Promise<LaunchCommand> {
+  ): Promise<RunningGame> {
     onEvent({ type: 'stage', stage: 'downloading-libraries' });
     if (options.skipGameCompletenessCheck !== true) {
       await this.ensureGameFiles(version, (progress) =>
@@ -162,7 +177,11 @@ export class Launcher {
       onEvent({ type: 'exit', code });
     });
 
-    return command;
+    return {
+      command,
+      pid: child.pid,
+      stop: (graceMs?: number) => stopProcess(child, graceMs)
+    };
   }
 }
 
