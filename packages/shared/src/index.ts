@@ -70,6 +70,16 @@ export interface InstanceFolderEntryDto {
    * resource packs; every other folder reports false.
    */
   enabled: boolean;
+  /** The resource pack format the file declares, for display. */
+  packFormat?: string;
+  /**
+   * False only when the file's own metadata proves the game cannot load it, so
+   * a pack the client would silently refuse can be called out before it is
+   * mistaken for a launcher bug. Absent means nothing was claimed.
+   */
+  compatible?: boolean;
+  /** Human-readable reason shown alongside the row. */
+  compatibilityNote?: string;
 }
 
 /** Modrinth project types surfaced in the download page. */

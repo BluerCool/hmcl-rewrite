@@ -1599,6 +1599,13 @@ body {
   margin-top: 14px;
 }
 
+/* Body text of a confirmation sheet, e.g. why a resource pack is suspect. */
+.sheet-text {
+  color: var(--monet-on-surface-variant);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 /* ============ Account login dialogs (original CreateAccountPane style) ============ */
 
 .sheet.dialog {
@@ -3286,6 +3293,19 @@ html.transparent-bg .launcher-bg::after {
   color: var(--monet-on-surface);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Marks a resource pack the game would refuse, so an installed-but-inert pack
+   is not mistaken for a launcher bug. */
+.folder-list-badge {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--monet-error);
+  color: var(--monet-error);
+  font-size: 11px;
+  line-height: 1.5;
   white-space: nowrap;
 }
 

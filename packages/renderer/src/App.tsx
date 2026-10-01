@@ -2627,22 +2627,33 @@ function FolderListTab({
   // downloaded pack take effect is to enable it inside the running game.
   const isResourcePackFolder = folder === 'resourcepacks';
   const [toggleError, setToggleError] = useState<string | undefined>(undefined);
+  const [warnEnable, setWarnEnable] = useState<InstanceFolderEntryDto | undefined>(undefined);
 
-  const toggleEnabled = async (entry: InstanceFolderEntryDto): Promise<void> => {
+  const writeEnabled = async (entry: InstanceFolderEntryDto, enabled: boolean): Promise<void> => {
     setToggleError(undefined);
     setEntries((current) =>
-      current.map((item) => (item.name === entry.name ? { ...item, enabled: !item.enabled } : item))
+      current.map((item) => (item.name === entry.name ? { ...item, enabled } : item))
     );
     try {
-      await hmcl().setResourcePackEnabled(instanceId, entry.name, !entry.enabled);
+      await hmcl().setResourcePackEnabled(instanceId, entry.name, enabled);
     } catch (reason) {
       // Put the row back the way the file still has it rather than leaving a
       // switch that lies about the game's state.
       setEntries((current) =>
-        current.map((item) => (item.name === entry.name ? { ...item, enabled: entry.enabled } : item))
+        current.map((item) => (item.name === entry.name ? { ...item, enabled: !enabled } : item))
       );
       setToggleError(describeInstallError(reason));
     }
+  };
+
+  const toggleEnabled = async (entry: InstanceFolderEntryDto): Promise<void> => {
+    // Enabling a pack the game would refuse looks like it worked and then does
+    // nothing, so it takes one confirmation — the same warning HMCL shows.
+    if (!entry.enabled && entry.compatible === false) {
+      setWarnEnable(entry);
+      return;
+    }
+    await writeEnabled(entry, !entry.enabled);
   };
 
   return (
@@ -2668,7 +2679,13 @@ function FolderListTab({
             {entries.map((entry) => (
               <li key={entry.name} className="folder-list-item">
                 {isResourcePackFolder && !entry.isDirectory ? (
-                  <label className="folder-list-switch" title={entry.enabled ? '已启用' : '已禁用'}>
+                  <label
+                    className="folder-list-switch"
+                    title={
+                      entry.compatibilityNote ??
+                      (entry.enabled ? '已启用' : '已禁用')
+                    }
+                  >
                     <input
                       type="checkbox"
                       checked={entry.enabled}
@@ -2683,6 +2700,9 @@ function FolderListTab({
                     </span>
                     <span className="folder-list-name">{entry.name}</span>
                   </>
+                )}
+                {entry.compatible === false && (
+                  <span className="folder-list-badge">不兼容</span>
                 )}
                 <span className="secondary">{entry.isDirectory ? '文件夹' : '文件'}</span>
                 <button
@@ -2711,6 +2731,30 @@ function FolderListTab({
             </div>
           </div>
           <button className="menu-backdrop" aria-label="关闭" onClick={() => setConfirmName(undefined)} />
+        </>
+      )}
+      {warnEnable !== undefined && (
+        <>
+          <div className="sheet-backdrop">
+            <div className="sheet">
+              <div className="card-title">启用 “{warnEnable.name}” 吗？</div>
+              <div className="sheet-text">{warnEnable.compatibilityNote}</div>
+              <div className="sheet-actions">
+                <button onClick={() => setWarnEnable(undefined)}>取消</button>
+                <button
+                  className="raised-button"
+                  onClick={() => {
+                    const entry = warnEnable;
+                    setWarnEnable(undefined);
+                    void writeEnabled(entry, true);
+                  }}
+                >
+                  仍然启用
+                </button>
+              </div>
+            </div>
+          </div>
+          <button className="menu-backdrop" aria-label="关闭" onClick={() => setWarnEnable(undefined)} />
         </>
       )}
     </div>

@@ -33,10 +33,13 @@ import {
   installOptiFineVersion,
   installVanillaVersion,
   optiFineLoaderId,
+  packCompatibilityNote,
   parseOptiFineLoaderId,
   primaryFileOf,
   readInstanceSettings,
   readGameOptions,
+  readPackMetadata,
+  requiredResourceFormat,
   resolveGameDir,
   searchModrinthProjects,
   setResourcePackEnabled,
@@ -1222,17 +1225,31 @@ handle(
     // Only resource packs have a per-file on/off state, and only the game reads
     // it: a pack missing from options.txt is never loaded no matter what is in
     // the folder, which is what "装完游戏里没反应" looked like.
-    const enabled =
-      folder === 'resourcepacks'
-        ? new Set(enabledResourcePacks((await readGameOptions(gameDir)).entries))
-        : undefined;
-    return entries
-      .map((entry) => ({
-        name: entry.name,
-        isDirectory: entry.isDirectory(),
-        enabled: enabled !== undefined && enabled.has(entry.name)
-      }))
-      .sort((a, b) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : (a.isDirectory ? -1 : 1)));
+    const packs = folder === 'resourcepacks';
+    const enabled = packs ? new Set(enabledResourcePacks((await readGameOptions(gameDir)).entries)) : undefined;
+    // A pack the game would refuse is worth saying out loud, so the pack format
+    // is read out of the file rather than trusted from the download listing.
+    const required = packs ? await requiredResourceFormat(repo, instanceId) : undefined;
+    const listed = await Promise.all(
+      entries.map(async (entry) => {
+        const row: InstanceFolderEntryDto = {
+          name: entry.name,
+          isDirectory: entry.isDirectory(),
+          enabled: enabled !== undefined && enabled.has(entry.name)
+        };
+        if (!packs || entry.isDirectory() || !entry.name.endsWith('.zip')) return row;
+        const metadata = await readPackMetadata(join(gameDir, folder, entry.name));
+        const note = packCompatibilityNote(metadata, required);
+        if (note !== undefined) {
+          row.compatible = false;
+          row.compatibilityNote = note;
+        }
+        return row;
+      })
+    );
+    return listed.sort((a, b) =>
+      a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : (a.isDirectory ? -1 : 1)
+    );
   }
 );
 
