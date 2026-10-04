@@ -3,8 +3,9 @@
  * and bridges everything to the renderer over IPC.
  */
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
-import { basename, extname, join } from 'node:path';
+import { basename, dirname, extname, join } from 'node:path';
 import { cp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import { inflateRawSync } from 'node:zlib';
 import { totalmem } from 'node:os';
 import {
@@ -58,6 +59,7 @@ import {
   type ResolvedVersion,
   type RunningGame
 } from '@hmcl/core';
+import { LogWindowController, type OutputRow } from './log-window.js';
 import type {
   AccountDto,
   AddonSubdir,
@@ -151,6 +153,7 @@ class AppState {
     if (this.settings.gameDir === '') {
       this.settings.gameDir = join(app.getPath('userData'), '.minecraft');
     }
+    logWindow.setLimit(this.settings.logLines ?? DEFAULT_LOG_LINES);
     await this.accounts.load();
   }
 
@@ -185,6 +188,12 @@ class AppState {
 
 const state = new AppState();
 
+/**
+ * HMCL's default when `logLines` is unset (Log.DEFAULT_LOG_LINES); also the
+ * starting cap for the log buffer.
+ */
+const DEFAULT_LOG_LINES = 2000;
+
 /** Default window paint, matching the light monet surface until the renderer loads. */
 const DEFAULT_WINDOW_BACKGROUND = '#fbf8ff';
 
@@ -196,6 +205,15 @@ function applyWindowTransparency(): void {
 
 /** The single launcher window, used by the renderer-facing window controls. */
 let win: BrowserWindow | null = null;
+
+/**
+ * The session log and its window. `runningGames` is the source of truth for
+ * which launch is up, so the window's 结束游戏进程 button cannot go stale.
+ */
+const logWindow = new LogWindowController(
+  broadcast,
+  () => [...state.runningGames.keys()].at(-1)
+);
 
 function createWindow(): void {
   win = new BrowserWindow({
@@ -226,9 +244,17 @@ function createWindow(): void {
   }
 }
 
+/**
+ * Sends an event to every window. Output rows are filed into the log buffer on
+ * the way through, so no producer can forget to log by routing around here.
+ */
 function broadcast(event: unknown): void {
+  const typed = event as { kind?: string } | null;
+  // The filed row carries the sequence number the log window dedupes on, so it
+  // travels with the event instead of being recomputed on the far side.
+  const payload = typed?.kind === 'output' ? { ...typed, ...logWindow.record(event as OutputRow) } : event;
   for (const window of BrowserWindow.getAllWindows()) {
-    window.webContents.send('hmcl:event', event);
+    window.webContents.send('hmcl:event', payload);
   }
 }
 
@@ -424,8 +450,7 @@ handle('loaders:install', async (kind: LoaderKind, mcVersion: string, loaderId: 
     const repo = state.repository();
     const provider = state.provider();
     const java = state.settings.javaExecutable ?? (await pickJava(undefined)) ?? 'java';
-    const onLine = (line: string): void =>
-      broadcast({ kind: 'output', launchId, line, isError: false });
+    const onLine = (line: string): void => logWindow.publish(launchId, line, false);
 
     let createdId: string;
     switch (kind) {
@@ -536,13 +561,70 @@ handle('theme:fix-background-transparency', async () => {
   applyWindowTransparency();
 });
 
-/** Writes the given launcher log to userData/logs and reveals it in the file manager. */
-handle('logs:export', async (text: string) => {
+/** Writes the session log to userData/logs and reveals it in the file manager. */
+handle('logs:export', async () => {
   const dir = join(app.getPath('userData'), 'logs');
   await mkdir(dir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const target = join(dir, `launcher-${stamp}.log`);
-  await writeFile(target, text, 'utf8');
+  await writeFile(target, logWindow.snapshot().lines.map((line) => line.text).join('\n'), 'utf8');
+  shell.showItemInFolder(target);
+  return target;
+});
+
+handle('logs:open-window', () => {
+  logWindow.open();
+});
+
+handle('logs:snapshot', () => logWindow.snapshot());
+
+/** Files a launcher-side message on the same channel as game output. */
+handle('logs:append', (line: { text: string; isError: boolean }) => {
+  logWindow.publish(-1, line.text, line.isError);
+});
+
+handle('logs:clear', () => {
+  logWindow.clear();
+  // Told to the windows rather than patched locally: main owns the buffer, and
+  // an open log window has to drop its rows at the same instant it goes empty.
+  broadcast({ kind: 'log-cleared' });
+});
+
+handle('logs:always-on-top', (alwaysOnTop: boolean) => {
+  logWindow.setAlwaysOnTop(alwaysOnTop);
+});
+
+/** Changes how many rows the buffer keeps, persisting it as the `logLines` setting. */
+handle('logs:set-lines', async (count: number) => {
+  logWindow.setLimit(count);
+  state.settings.logLines = count;
+  return state.saveSettings();
+});
+
+/**
+ * Thread dump of the running game, the counterpart of HMCL's 导出游戏运行栈.
+ * Uses the JDK that launched the game, so the dump matches what it is running.
+ */
+handle('logs:dump-stack', async () => {
+  const launchId = [...state.runningGames.keys()].at(-1);
+  const game = launchId === undefined ? undefined : state.runningGames.get(launchId);
+  if (game === undefined || game.pid === undefined) throw new Error('游戏未在运行');
+  const javaPath = game.command.argv[0];
+  if (javaPath === undefined) throw new Error('找不到启动游戏所用的 Java');
+  const jstack = join(dirname(javaPath), process.platform === 'win32' ? 'jstack.exe' : 'jstack');
+
+  const dump = await new Promise<string>((resolve, reject) => {
+    execFile(jstack, [String(game.pid)], { maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error !== null) reject(new Error(stderr.trim() === '' ? error.message : stderr.trim()));
+      else resolve(stdout);
+    });
+  });
+
+  const dir = join(app.getPath('userData'), 'logs');
+  await mkdir(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const target = join(dir, `jstack-${stamp}.log`);
+  await writeFile(target, dump, 'utf8');
   shell.showItemInFolder(target);
   return target;
 });
@@ -613,6 +695,9 @@ handle('launch:start', async (versionId: string) => {
     .launch(resolved, auth, effectiveOptions, (event) => onLauncherEvent(event as { type: string }))
     .then((game) => {
       state.runningGames.set(launchId, game);
+      // HMCL pops the log window the moment the process appears
+      // (LauncherHelper.java:873), gated by the instance's 显示日志 setting.
+      if (instanceSettings.showLogs !== false) logWindow.open();
       if (win !== null) {
         if (reopenOnExit || visibility === 'hide') {
           win.hide();
@@ -622,12 +707,7 @@ handle('launch:start', async (versionId: string) => {
       }
     })
     .catch((error: unknown) => {
-      broadcast({
-        kind: 'output',
-        launchId,
-        line: `Launch failed: ${String(error)}`,
-        isError: true
-      });
+      logWindow.publish(launchId, `Launch failed: ${String(error)}`, true, 'error');
       broadcast({ kind: 'exit', launchId, code: -1 });
     })
     .finally(() => {
@@ -857,7 +937,7 @@ handle('modpack:install-file', async (path: string, instanceName: string) => {
       state.repository(), state.provider(), String(path), String(instanceName), {
         java: await resolveJava(),
         onProgress: (p) => broadcast({ kind: 'download-progress', launchId, progress: p }),
-        onLine: (line) => broadcast({ kind: 'output', launchId, line, isError: false })
+        onLine: (line) => logWindow.publish(launchId, line, false)
       }
     );
     broadcast({ kind: 'download-settled', launchId, ok: true });
@@ -910,7 +990,7 @@ handle('modpack:install-modrinth', async (projectId: string, versionId: string, 
       installed = await installModpackFile(state.repository(), provider, target, String(instanceName), {
         java: await resolveJava(),
         onProgress: (p) => broadcast({ kind: 'download-progress', launchId, progress: p }),
-        onLine: (line) => broadcast({ kind: 'output', launchId, line, isError: false })
+        onLine: (line) => logWindow.publish(launchId, line, false)
       });
     } finally {
       await rm(tempDir, { recursive: true, force: true });

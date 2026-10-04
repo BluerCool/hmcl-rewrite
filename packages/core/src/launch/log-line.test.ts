@@ -19,6 +19,12 @@ describe('parseLogLevel', () => {
     expect(parseLogLevel('[09:44:39] [main/INFO] [STDOUT]: [ERROR] unrelated body', false)).toBe('info');
   });
 
+  it('reads the single-letter markers GLFW and LWJGL print on stderr', () => {
+    expect(parseLogLevel('[W][11:16:12.780327] pw.conf  | [ conf.c: 1209] deprecated', true)).toBe('warn');
+    expect(parseLogLevel('[E][11:16:12] glfw  | error 65542', true)).toBe('error');
+    expect(parseLogLevel('[I][11:16:12] glfw  | version 4.6', false)).toBe('info');
+  });
+
   it('does not mistake ordinary prose for a level', () => {
     expect(parseLogLevel('Setting user: JasonBCatte', false)).toBeUndefined();
     expect(parseLogLevel('[09:44:39] [main/INFO]: debugme-1.2.3.jar loaded', false)).toBe('info');

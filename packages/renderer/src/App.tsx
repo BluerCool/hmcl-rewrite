@@ -72,21 +72,14 @@ import {
   MoreVertIcon
 } from './icons';
 import { offlineUuid } from './md5';
+import { hmcl } from './bridge';
 
-/** Typed accessor for the preload bridge. */
-export function hmcl(): import('@hmcl/shared').HmclApi {
-  return (window as unknown as { hmcl: import('@hmcl/shared').HmclApi }).hmcl;
-}
+export { hmcl };
 
 export interface LogLine {
   text: string;
   isError: boolean;
 }
-
-/** Row caps offered by the log drawer, matching HMCL's combo (LogWindow.java:192). */
-const LOG_LINE_OPTIONS = [500, 2000, 5000, 10000];
-/** HMCL's own default when `logLines` is unset (Log.DEFAULT_LOG_LINES). */
-const DEFAULT_LOG_LINES = 2000;
 
 export type PageId = 'home' | 'accounts' | 'instances' | 'download' | 'settings' | 'terracotta';
 
@@ -151,12 +144,10 @@ export function useLauncherState() {
     },
     [setCurrentIdAndPersist]
   );
-  const [logs, setLogs] = useState<LogLine[]>([]);
   const [stage, setStage] = useState('空闲');
   const [progress, setProgress] = useState<DownloadProgressDto | undefined>();
   const [downloading, setDownloading] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [logOpen, setLogOpen] = useState(false);
   const [toast, setToast] = useState<string | undefined>(undefined);
   const [deviceCode, setDeviceCode] = useState<MicrosoftDeviceCodeDto | undefined>(undefined);
   const [maximized, setMaximized] = useState(false);
@@ -225,40 +216,26 @@ export function useLauncherState() {
   };
 
   /**
-   * Appends one line, trimming to the `logLines` setting so a long session cannot
-   * grow without bound (HMCL keeps the same cap, LogWindow.java:140-156).
+   * Hands one launcher-side message to the log window.
+   *
+   * The buffer lives in main, the way HMCL's `CircularArrayList` lives in the
+   * launcher and is shared with every `LogWindow` (LauncherHelper.java:857), so
+   * closing and reopening the window never loses the session.
    */
   const appendLog = (line: LogLine): void => {
-    const limit = settings?.logLines ?? DEFAULT_LOG_LINES;
-    setLogs((previous) => [...previous, line].slice(-limit));
+    void hmcl()
+      .appendLog({ text: line.text, isError: line.isError })
+      .catch(() => undefined);
   };
 
-  /** Drops every buffered line, like HMCL's clear button (LogWindow.java:206). */
-  const clearLogs = (): void => {
-    setLogs([]);
-  };
-
-  /**
-   * Writes the buffered session log to a timestamped file and reports where it
-   * went. Shared by the log drawer and the launcher-wide settings tab.
-   */
+  /** Writes the session log to a timestamped file and reports where it went. */
   const exportLogs = async (): Promise<void> => {
     try {
-      const text = logs.map((line) => line.text).join('\n') || '（本启动器会话暂无日志）';
-      const target = await hmcl().exportLogs(text);
+      const target = await hmcl().exportLogs();
       appendLog({ text: `日志已导出: ${target}`, isError: false });
     } catch (error) {
       appendLog({ text: `导出日志失败: ${String(error)}`, isError: true });
     }
-  };
-
-  /** HMCL's `logLines` combo box; also trims what is already buffered. */
-  const setLogLines = (count: number): void => {
-    setSettings((previous) => (previous === undefined ? previous : { ...previous, logLines: count }));
-    setLogs((previous) => previous.slice(-count));
-    void hmcl()
-      .saveSettings({ logLines: count })
-      .catch((error) => appendLog({ text: String(error), isError: true }));
   };
 
   /**
@@ -266,13 +243,13 @@ export function useLauncherState() {
    * list, instance manage). Previously each one only appended to the log
    * drawer, which starts closed, so a failed launch looked like nothing had
    * happened at all. Now the reason is logged, the busy flag is released, the
-   * status line says so, and the drawer opens to show the detail.
+   * status line says so, and the log window opens to show the detail.
    */
   const reportLaunchFailure = (error: unknown): void => {
     appendLog({ text: String(error), isError: true });
     setBusy(false);
     setTransientStage('启动失败');
-    setLogOpen(true);
+    void hmcl().openLogWindow();
   };
 
   /**
@@ -314,9 +291,6 @@ export function useLauncherState() {
             }
           }, 700);
           break;
-        case 'output':
-          appendLog({ text: event.line, isError: event.isError });
-          break;
         case 'exit':
           setBusy(false);
           setRunningGameId(undefined);
@@ -333,19 +307,19 @@ export function useLauncherState() {
             showToast('游戏已退出');
           } else if (event.code === -1) {
             // The main process maps a failed launch to -1 and puts the reason
-            // in the log, so open the drawer instead of leaving a bare -1 on
-            // screen. This is the failure path that actually fires: a launch
+            // in the log, so open the log window instead of leaving a bare -1
+            // on screen. This is the failure path that actually fires: a launch
             // that blows up never rejects launch:start.
             setTransientStage('启动失败');
             showToast('启动失败');
-            setLogOpen(true);
+            void hmcl().openLogWindow();
           } else {
             // The game did start, then exited on its own. Its own output is
             // already in the log, so surface that too (HMCL does the same for
             // a crash) rather than only reporting a code.
             setTransientStage(`游戏已退出，退出码 ${String(event.code)}`);
             showToast(`游戏已退出，退出码 ${String(event.code)}`);
-            setLogOpen(true);
+            void hmcl().openLogWindow();
           }
           break;
         case 'microsoft-device-code':
@@ -386,14 +360,11 @@ export function useLauncherState() {
     setJavas,
     currentId,
     setCurrentId: setCurrentIdAndPersist,
-    logs,
     stage,
     progress,
     downloading,
     busy,
     setBusy,
-    logOpen,
-    setLogOpen,
     toast,
     showToast,
     deviceCode,
@@ -404,9 +375,7 @@ export function useLauncherState() {
     refreshInstalled,
     refreshAccounts,
     appendLog,
-    clearLogs,
     exportLogs,
-    setLogLines,
     reportLaunchFailure,
     runningGameId,
     stopGame,
@@ -665,7 +634,7 @@ export function Shell(): React.JSX.Element | null {
               className="titlebar-text-button"
               title="日志"
               aria-label="日志"
-              onClick={() => state.setLogOpen((open) => !open)}
+              onClick={() => void hmcl().openLogWindow()}
             >
               <TerminalIcon size={15} />
               日志
@@ -746,8 +715,8 @@ export function Shell(): React.JSX.Element | null {
               <NavItem
                 icon={<TerminalIcon size={20} />}
                 label="日志"
-                active={state.logOpen}
-                onClick={() => state.setLogOpen((open) => !open)}
+                active={false}
+                onClick={() => void hmcl().openLogWindow()}
               />
 
               <div className="sidebar-category">服务</div>
@@ -823,7 +792,6 @@ export function Shell(): React.JSX.Element | null {
           did nothing on the home and instance-manage pages -- and a failed
           launch, whose only feedback is this drawer, stayed invisible exactly
           where launches are started. */}
-      {state.logOpen && <LogDrawer state={pageProps} onClose={() => state.setLogOpen(false)} />}
       {/* Toasts render here too, above every page and dialog. Raising one from a
           dialog used to render it inside that dialog, so the note vanished the
           instant the user clicked the button that produced it. */}
@@ -1231,14 +1199,11 @@ interface StateHook {
   setJavas: (javas: JavaRuntimeDto[]) => void;
   currentId: string | undefined;
   setCurrentId: (id: string | undefined) => void;
-  logs: LogLine[];
   stage: string;
   progress: DownloadProgressDto | undefined;
   downloading: boolean;
   busy: boolean;
   setBusy: (busy: boolean) => void;
-  logOpen: boolean;
-  setLogOpen: (open: boolean | ((open: boolean) => boolean)) => void;
   toast: string | undefined;
   showToast: (message: string) => void;
   deviceCode: MicrosoftDeviceCodeDto | undefined;
@@ -1248,13 +1213,10 @@ interface StateHook {
   maximized: boolean;
   refreshInstalled: (preferredSettings?: SettingsDto) => Promise<void>;
   refreshAccounts: () => Promise<void>;
+  /** Hands one launcher-side message to the log window. */
   appendLog: (line: LogLine) => void;
-  /** Empties the log buffer; mirrors HMCL's clear button. */
-  clearLogs: () => void;
-  /** Writes the buffered log to a timestamped file under the work directory. */
+  /** Writes the session log to a timestamped file under the work directory. */
   exportLogs: () => Promise<void>;
-  /** Changes the retained row count and persists it as the `logLines` setting. */
-  setLogLines: (count: number) => void;
   reportLaunchFailure: (error: unknown) => void;
   /** Launch id of the game process currently up, undefined when none is. */
   runningGameId: number | undefined;
@@ -3691,7 +3653,7 @@ function AddonVersionDialog({
         {installError !== undefined && (
           <div className="field-error install-error">
             {kindLabel}安装失败：{installError}
-            <button className="text-button install-error-log" onClick={() => state.setLogOpen(true)}>
+            <button className="text-button install-error-log" onClick={() => void hmcl().openLogWindow()}>
               查看日志
             </button>
           </div>
@@ -5913,109 +5875,6 @@ function SettingsPage({ state }: StateHookProps): React.JSX.Element {
         {tab === 'feedback' && <FeedbackSettingsTab />}
         {tab === 'about' && <AboutSettingsTab />}
       </main>
-    </div>
-  );
-}
-
-/**
- * Bottom drawer streaming game output, standing in for HMCL's LogWindow. Keeps
- * the controls that actually change what you can do with the stream: auto
- * scroll, word wrap, a row cap, export, terminate and clear. The level filter
- * row stays out because our lines only carry an isError flag, not a log4j level.
- */
-function LogDrawer({ state, onClose }: StateHookProps & { onClose: () => void }): React.JSX.Element {
-  const bodyRef = useRef<HTMLPreElement>(null);
-  /** HMCL `logwindow.autoscroll`, on by default (LogWindow.java:409-411). */
-  const [autoScroll, setAutoScroll] = useState(true);
-  /** HMCL `logwindow.wrap_text`, on by default (LogWindow.java:413-415). */
-  const [wrapText, setWrapText] = useState(true);
-  /**
-   * Whether the view is parked at the newest line. Scrolling up pauses the
-   * follow so a wall of new output cannot yank the user away from the error
-   * they just scrolled back to read; HMCL gets the same effect manually via the
-   * checkbox, but only the escape hatch is automatic here.
-   */
-  const [atTail, setAtTail] = useState(true);
-  const follow = autoScroll && atTail;
-
-  useEffect(() => {
-    if (!follow) return;
-    const body = bodyRef.current;
-    if (body !== null) body.scrollTop = body.scrollHeight;
-  }, [state.logs, follow]);
-
-  const onScroll = (): void => {
-    const body = bodyRef.current;
-    if (body === null) return;
-    setAtTail(body.scrollHeight - body.scrollTop - body.clientHeight <= 8);
-  };
-
-  /** Re-arms following and jumps to the newest line in one step. */
-  const jumpToTail = (): void => {
-    setAtTail(true);
-    const body = bodyRef.current;
-    if (body !== null) body.scrollTop = body.scrollHeight;
-  };
-
-  return (
-    <div className="log-drawer">
-      <div className="log-header">
-        <span>游戏日志</span>
-        <div className="log-header-actions">
-          <label className="field field-row log-field">
-            <span>显示行数</span>
-            <select
-              value={state.settings?.logLines ?? DEFAULT_LOG_LINES}
-              onChange={(event) => state.setLogLines(Number(event.target.value))}
-            >
-              {LOG_LINE_OPTIONS.map((count) => (
-                <option key={count} value={count}>
-                  {count}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button className="text-button" onClick={onClose}>
-            关闭
-          </button>
-        </div>
-      </div>
-      <pre className={`log-body${wrapText ? ' wrap' : ''}`} ref={bodyRef} onScroll={onScroll}>
-        {state.logs.map((line, index) => (
-          <div key={index} className={line.isError ? 'err' : ''}>
-            {line.text}
-          </div>
-        ))}
-      </pre>
-      {!follow && (
-        <button className="log-tail-button" onClick={jumpToTail}>
-          回到最新
-        </button>
-      )}
-      <div className="log-toolbar">
-        <label className="field field-row log-field">
-          <input type="checkbox" checked={autoScroll} onChange={(event) => setAutoScroll(event.target.checked)} />
-          <span>自动滚动</span>
-        </label>
-        <label className="field field-row log-field">
-          <input type="checkbox" checked={wrapText} onChange={(event) => setWrapText(event.target.checked)} />
-          <span>自动换行</span>
-        </label>
-        <button className="text-button" onClick={() => void state.exportLogs()}>
-          导出
-        </button>
-        <button
-          className="text-button"
-          disabled={state.runningGameId === undefined}
-          title={state.runningGameId === undefined ? '游戏未在运行' : '结束游戏进程'}
-          onClick={() => void state.stopGame()}
-        >
-          结束游戏进程
-        </button>
-        <button className="text-button" onClick={state.clearLogs}>
-          清除
-        </button>
-      </div>
     </div>
   );
 }

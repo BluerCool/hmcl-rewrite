@@ -1,0 +1,286 @@
+/**
+ * The log window, styled from HMCL's `LogWindow` skin and the `-fixed-log-*`
+ * palette in `brightness-dark.css`. Colours are copied rather than themed: a log
+ * reader expects the same greys and the same severity tints every session.
+ */
+
+:root {
+  /* brightness-dark.css:10-22 */
+  --log-background: #282828;
+  --log-text: #e3e3e3;
+  --log-toggle-selected: #dee2e6;
+  --log-toggle-unselected: #6c757d;
+  --log-trace-background: #495057;
+  --log-debug-background: #343a40;
+  --log-info-background: #212529;
+  --log-warn-background: #413c26;
+  --log-warn-text: #fdf3aa;
+  --log-error-background: #4e3534;
+  --log-error-text: #f9dedc;
+  --log-fatal-background: #842029;
+  --log-selected: #3e3e3e;
+  /* Outline variant, used for the hairline between rows. */
+  --log-divider: #3d3d3d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#log-root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--log-background);
+  color: var(--log-text);
+  font-family: 'Noto Sans SC', 'Source Han Sans SC', system-ui, sans-serif;
+  font-size: 12px;
+  /* The window has its own frame, so no drag regions are needed here. */
+  overflow: hidden;
+}
+
+.log-window {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* ============ Top bar: always-on-top, row cap, level filters ============ */
+
+.log-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--log-divider);
+}
+
+.log-top-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.log-top-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The always-on-top pin rotates when engaged, like root.css:1421-1428. */
+.icon-toggle {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--log-toggle-unselected);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.icon-toggle.on {
+  transform: rotate(45deg);
+  border-color: #4b5b8a;
+  background: #333a4d;
+  color: var(--log-toggle-selected);
+}
+
+.field-label {
+  color: var(--log-toggle-unselected);
+}
+
+.row-cap {
+  padding: 2px 4px;
+  border: 1px solid var(--log-divider);
+  border-radius: 4px;
+  background: var(--log-info-background);
+  color: var(--log-text);
+  font: inherit;
+}
+
+/* Level filters, each tinted with its own band colour (root.css:1332-1354). */
+.level-toggle {
+  padding: 2px 8px;
+  border: 1px solid var(--log-toggle-unselected);
+  border-radius: 4px;
+  color: var(--log-toggle-unselected);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.level-toggle.on {
+  border-color: var(--log-toggle-selected);
+  color: var(--log-toggle-selected);
+}
+
+.level-toggle.fatal.on {
+  background: var(--log-fatal-background);
+}
+.level-toggle.error.on {
+  background: var(--log-error-background);
+}
+.level-toggle.warn.on {
+  background: var(--log-warn-background);
+}
+.level-toggle.info.on {
+  background: var(--log-info-background);
+}
+.level-toggle.debug.on {
+  background: var(--log-debug-background);
+}
+.level-toggle.trace.on {
+  background: var(--log-trace-background);
+}
+
+/* ============ Rows ============ */
+
+.log-rows {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  overflow-x: auto;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  user-select: text;
+}
+
+/* Wrap is opt-out, so long classpath and argument lines stay readable. */
+.log-rows.wrap {
+  white-space: pre-wrap;
+  overflow-x: hidden;
+  overflow-wrap: anywhere;
+}
+
+.log-rows:not(.wrap) {
+  white-space: pre;
+}
+
+.log-row {
+  padding: 2px 8px;
+  border-bottom: 1px solid var(--log-divider);
+  background: var(--log-info-background);
+  white-space: inherit;
+  cursor: text;
+}
+
+.log-row.selected {
+  background: var(--log-selected);
+}
+
+.log-row.debug {
+  background: var(--log-debug-background);
+}
+
+.log-row.trace {
+  background: var(--log-trace-background);
+}
+
+.log-row.warn {
+  background: var(--log-warn-background);
+  color: var(--log-warn-text);
+}
+
+.log-row.error {
+  background: var(--log-error-background);
+  color: var(--log-error-text);
+}
+
+.log-row.fatal {
+  background: var(--log-fatal-background);
+}
+
+.log-empty {
+  padding: 16px 8px;
+  color: var(--log-toggle-unselected);
+  text-align: center;
+}
+
+/* Jump-to-tail, shown only while the auto-scroll is paused. */
+.tail-button {
+  position: fixed;
+  right: 18px;
+  bottom: 46px;
+  padding: 3px 12px;
+  border: 1px solid var(--log-toggle-selected);
+  border-radius: 999px;
+  background: #1b2030;
+  color: var(--log-text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+/* ============ Bottom bar ============ */
+
+.log-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 4px 8px;
+  border-top: 1px solid var(--log-divider);
+}
+
+.log-bottom .check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--log-toggle-unselected);
+  cursor: pointer;
+}
+
+.log-bottom .check input {
+  margin: 0;
+  accent-color: #7f9cf5;
+}
+
+.action {
+  padding: 3px 12px;
+  border: 1px solid var(--log-divider);
+  border-radius: 4px;
+  background: var(--log-info-background);
+  color: var(--log-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.action:hover:not(:disabled) {
+  border-color: var(--log-toggle-selected);
+}
+
+.action:disabled {
+  color: var(--log-toggle-unselected);
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* HMCL's scrollbar tint: the surface tint, not the default grey. */
+.log-rows::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.log-rows::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: #4a4f5c;
+  background-clip: content-box;
+}
+
+.log-rows::-webkit-scrollbar-thumb:hover {
+  background: #5c6272;
+  background-clip: content-box;
+}

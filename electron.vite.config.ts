@@ -23,7 +23,11 @@ export default defineConfig({
     build: {
       outDir: 'out/renderer',
       rollupOptions: {
-        input: resolve(__dirname, 'packages/renderer/index.html')
+        // Two pages: the launcher itself and the separate log window.
+        input: {
+          index: resolve(__dirname, 'packages/renderer/index.html'),
+          log: resolve(__dirname, 'packages/renderer/log.html')
+        }
       }
     }
   }

@@ -175,20 +175,6 @@ body {
   }
 }
 
-/* Log drawer slides up from the bottom edge. */
-.log-drawer {
-  animation: drawer-in 0.2s cubic-bezier(0.22, 0.9, 0.36, 1);
-}
-
-@keyframes drawer-in {
-  from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
-
 /* ============ Window title bar (HMCL jfx-tool-bar) ============ */
 
 .root-shell {
@@ -1035,110 +1021,6 @@ body {
 
 .java-list .empty {
   color: var(--monet-on-surface-variant);
-  cursor: default;
-}
-
-/* ============ Log drawer ============ */
-
-/* Anchored to the window rather than to any page container, so the drawer
-   covers the full width (sidebar included) from every page. z-index clears
-   page content and popups (200) but stays under transient menus (1000) and
-   the drag overlay (2000). */
-.log-drawer {
-  position: fixed;
-  inset: auto 0 0 0;
-  height: 42%;
-  z-index: 900;
-  display: flex;
-  flex-direction: column;
-  background: #101216;
-  color: #cfd4dc;
-  border-top: 2px solid var(--monet-primary-container);
-}
-
-.log-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 14px;
-  font-size: 12.5px;
-  color: var(--monet-on-surface-variant);
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.log-drawer .text-button {
-  color: #9fb6ef;
-}
-
-.log-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.log-field {
-  gap: 6px;
-  font-size: 12.5px;
-  white-space: nowrap;
-}
-
-.log-field select {
-  padding: 2px 6px;
-  font-size: 12px;
-}
-
-.log-body {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  margin: 0;
-  padding: 8px 14px;
-  overflow-y: auto;
-  /* Wrap is opt-out so long classpath/argument lines stay readable. */
-  white-space: pre;
-  overflow-x: auto;
-  font-family: 'JetBrains Mono', Consolas, monospace;
-  font-size: 11.5px;
-  line-height: 1.45;
-  user-select: text;
-}
-
-.log-body.wrap {
-  white-space: pre-wrap;
-  overflow-x: hidden;
-  overflow-wrap: anywhere;
-}
-
-.log-body .err {
-  color: #f87171;
-}
-
-/* Shown while the auto-scroll is paused, so the newest line is one click away. */
-.log-tail-button {
-  position: absolute;
-  right: 18px;
-  bottom: 44px;
-  padding: 3px 12px;
-  border: 1px solid var(--monet-primary-container);
-  border-radius: 999px;
-  background: #1b2030;
-  color: #cfd4dc;
-  font-size: 11.5px;
-  cursor: pointer;
-}
-
-.log-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 14px;
-  padding: 5px 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  font-size: 12.5px;
-}
-
-.log-toolbar .text-button[disabled] {
-  opacity: 0.45;
   cursor: default;
 }
 

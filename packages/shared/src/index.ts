@@ -284,12 +284,50 @@ export interface InstanceSettingsDto {
   disableAutoGameOptions?: boolean;
 }
 
+/**
+ * Severity of one log row, mirroring core's `LogLevel` and HMCL's `Log4jLevel`.
+ * Re-declared here because the shared package must not depend on core.
+ */
+export type LogLevel = 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
+
+/** One buffered log row as the log window sees it. */
+export interface LogLineDto {
+  text: string;
+  /** Whether the row arrived on stderr. Kept for the row's own origin. */
+  isError: boolean;
+  level: LogLevel;
+  /** Milliseconds since the epoch, for ordering rows appended in one batch. */
+  time: number;
+  /**
+   * Monotonic position in the session buffer. The log window uses it to drop
+   * live rows that its opening snapshot already contained, so no row is lost or
+   * shown twice regardless of how the two channels interleave.
+   */
+  seq: number;
+}
+
+/** Everything the log window needs to render itself the moment it opens. */
+export interface LogSnapshotDto {
+  lines: LogLineDto[];
+  /** Launch id of the game currently up, undefined when none is. */
+  runningLaunchId: number | undefined;
+}
+
 /** Events pushed from main to renderer. */
 export type LauncherEvent =
   | { kind: 'stage'; launchId: number; stage: string }
   | { kind: 'download-progress'; launchId: number; progress: DownloadProgressDto }
   | { kind: 'download-settled'; launchId: number; ok: boolean; error?: string }
-  | { kind: 'output'; launchId: number; line: string; isError: boolean }
+  | {
+      kind: 'output';
+      launchId: number;
+      line: string;
+      isError: boolean;
+      level: LogLevel;
+      /** Stamped by main from the log buffer, so the window can order and dedupe rows. */
+      time: number;
+      seq: number;
+    }
   /**
    * The game process ended.
    *
@@ -299,7 +337,11 @@ export type LauncherEvent =
   | { kind: 'exit'; launchId: number; code: number | null; stopped?: boolean }
   | { kind: 'microsoft-device-code'; code: MicrosoftDeviceCodeDto }
   | { kind: 'microsoft-login-result'; ok: boolean; message: string }
-  | { kind: 'window-maximized'; maximized: boolean };
+  | { kind: 'window-maximized'; maximized: boolean }
+  /** Sent to the log window once it has loaded, so it can render the buffer. */
+  | { kind: 'log-snapshot'; snapshot: LogSnapshotDto }
+  /** The buffer was emptied, so the window drops its rows at the same moment. */
+  | { kind: 'log-cleared' };
 
 /** Typed surface exposed on `window.hmcl` via the preload bridge. */
 export interface HmclApi {
@@ -404,7 +446,27 @@ export interface HmclApi {
   /** Reasserts the window background color to work around a stuck opaque layer. */
   fixBackgroundTransparency(): Promise<void>;
   /** Appends the given log text to a timestamped file and reveals it in the file manager. */
-  exportLogs(text: string): Promise<string>;
+  exportLogs(): Promise<string>;
+  /**
+   * Log window. Main owns the buffer so the window can be closed and reopened
+   * without losing the session, exactly like HMCL's shared `CircularArrayList`.
+   */
+  openLogWindow(): Promise<void>;
+  /** Buffered rows plus which launch is up, for a freshly opened log window. */
+  getLogSnapshot(): Promise<LogSnapshotDto>;
+  /** Appends one launcher-side message (not game output) to the same buffer. */
+  appendLog(line: { text: string; isError: boolean }): Promise<void>;
+  /** Empties the buffer, mirroring HMCL's clear button. */
+  clearLogs(): Promise<void>;
+  /** Changes the retained row count, persisting it as the `logLines` setting. */
+  setLogLines(count: number): Promise<void>;
+  /** Pins the log window above others, like HMCL's always-on-top toggle. */
+  setLogAlwaysOnTop(alwaysOnTop: boolean): Promise<void>;
+  /**
+   * Writes a thread dump of the running game with the JDK's `jstack`, the
+   * counterpart of HMCL's 导出游戏运行栈. Rejects when nothing is running.
+   */
+  dumpGameStack(): Promise<string>;
   /** Renames an existing (offline) account. */
   renameAccount(id: string, username: string): Promise<AccountDto>;
   /** Minimizes the launcher window. */

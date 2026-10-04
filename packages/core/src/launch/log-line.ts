@@ -13,6 +13,17 @@ export const LOG_LEVELS: readonly LogLevel[] = ['fatal', 'error', 'warn', 'info'
 
 const LEVEL_NAMES = new Map<string, LogLevel>(LOG_LEVELS.map((level) => [level.toUpperCase(), level]));
 
+/**
+ * GLFW and LWJGL abbreviate to a single letter in brackets (`[W][11:16:12] pw.conf`),
+ * which is how a chunk of the game's stderr announces itself as warnings.
+ */
+const LEVEL_INITIALS = new Map<string, LogLevel>(
+  (['f', 'e', 'w', 'i', 'd', 't'] as const).flatMap((letter, index) => {
+    const level = LOG_LEVELS[index];
+    return level === undefined ? [] : [[letter.toUpperCase(), level] as const];
+  })
+);
+
 /** `[09:44:39] [Render thread/WARN]: ...` — the timestamped vanilla pattern. */
 const TIMESTAMPED = /^\[\d{2}:\d{2}:\d{2}(?:[.,]\d+)?\]/;
 
@@ -46,7 +57,8 @@ export function parseLogLevel(line: string, isError: boolean): LogLevel | undefi
   for (const match of head.matchAll(/\[([^\]]*)\]/g)) {
     const inner = match[1] ?? '';
     const slash = inner.lastIndexOf('/');
-    const level = LEVEL_NAMES.get((slash < 0 ? inner : inner.slice(slash + 1)).trim().toUpperCase());
+    const tail = (slash < 0 ? inner : inner.slice(slash + 1)).trim().toUpperCase();
+    const level = LEVEL_NAMES.get(tail) ?? (tail.length === 1 ? LEVEL_INITIALS.get(tail) : undefined);
     if (level !== undefined) return level;
   }
   // A timestamped row always carries its level in a bracket, so trusting bare
