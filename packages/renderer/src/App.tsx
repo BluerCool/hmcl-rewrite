@@ -1486,6 +1486,18 @@ function InstancesPage({
     }
   };
 
+  /** Writes the launch script, then reports where it landed. */
+  const saveLaunchScript = async (id: string): Promise<void> => {
+    try {
+      const saved = await hmcl().saveLaunchScript(id);
+      if (saved !== undefined) {
+        state.appendLog({ text: `启动脚本已生成完毕：${saved}`, isError: false });
+      }
+    } catch (e) {
+      state.appendLog({ text: `生成启动脚本失败: ${String(e)}`, isError: true });
+    }
+  };
+
   return (
     <div className="page list-page">
       <h2 className="page-title">实例列表</h2>
@@ -1606,6 +1618,15 @@ function InstancesPage({
                       测试启动
                     </button>
                   </li>
+                  <li>
+                    <button
+                      onClick={() => { setMenuFor(undefined); void saveLaunchScript(version.id); }}
+                    >
+                      <ScriptIcon size={17} />
+                      生成启动脚本
+                    </button>
+                  </li>
+                  <li className="separator" />
                   <li>
                     <button onClick={() => { setMenuFor(undefined); openSettings(version.id); }}>
                       <SettingsIcon size={17} />

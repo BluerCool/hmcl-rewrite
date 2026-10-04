@@ -4,22 +4,27 @@
  */
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { basename, dirname, extname, join } from 'node:path';
-import { cp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { cp, chmod, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { inflateRawSync } from 'node:zlib';
 import { totalmem } from 'node:os';
 import {
   AccountStore,
   BmclapiDownloadProvider,
+  CURRENT_OS,
   Downloader,
   GameRepository,
   Launcher,
   MojangDownloadProvider,
   applyInstanceSettings,
+  buildLaunchCommand,
+  cleanNativesDirectory,
   createOfflineProfile,
   detectJavaRuntimes,
   downloadAddonFile,
   enabledResourcePacks,
+  encodeLaunchScript,
+  extractNatives,
   fetchFabricLoaders,
   fetchForgeBuilds,
   fetchModrinthCategories,
@@ -42,13 +47,17 @@ import {
   readGameOptions,
   readPackMetadata,
   requiredResourceFormat,
+  renderLaunchScript,
   resolveGameDir,
   resolveLoaderComponents,
+  scriptFlavour,
   searchModrinthProjects,
   setResourcePackEnabled,
+  suggestScriptName,
   supportsNewOptionsFormat,
   writeGameOptions,
   writeInstanceSettings,
+  type AuthInfo,
   type DownloadProvider,
   type GameVersionJson,
   type InstanceSettings,
@@ -608,31 +617,29 @@ handle('logs:dump-stack', async () => {
   return target;
 });
 
-handle('launch:start', async (versionId: string) => {
-  const launchId = state.allocateLaunchId();
-  const abort = new AbortController();
-  state.runningLaunches.set(launchId, abort);
-
-  // Remember the launched instance so the next app open defaults to it.
-  state.settings.lastLaunchedId = versionId;
-  void state.saveSettings();
-
+/**
+ * Everything `launch:start` and `launch:save-script` both need: the resolved
+ * version, the credentials to launch it with, and the options after the global
+ * settings have been overlaid with the instance's own.
+ */
+async function resolveLaunchPlan(versionId: string): Promise<{
+  repo: GameRepository;
+  resolved: ResolvedVersion;
+  auth: AuthInfo;
+  options: LaunchOptions;
+}> {
   const repo = state.repository();
   const resolved: ResolvedVersion = await repo.resolveInstalledVersion(versionId);
 
   // Resolve credentials from the selected account (falls back to offline).
-  let auth;
   const account = state.selectedAccount();
-  if (account !== undefined) {
-    auth = await state.accounts.getCredentials(account, state.settings.microsoftClientId ?? '');
-  } else {
-    auth = createOfflineProfile(state.settings.playerName);
-  }
+  const auth =
+    account !== undefined
+      ? await state.accounts.getCredentials(account, state.settings.microsoftClientId ?? '')
+      : createOfflineProfile(state.settings.playerName);
 
   // Effective options: global settings overlaid with per-instance overrides.
-  const javaExecutable =
-    state.settings.javaExecutable ?? (await pickJava(resolved)) ?? 'java';
-  const launcher = new Launcher(repo, state.provider());
+  const javaExecutable = state.settings.javaExecutable ?? (await pickJava(resolved)) ?? 'java';
   const launchOptions: LaunchOptions = {
     javaExecutable,
     javaMajorVersion: 17,
@@ -642,14 +649,33 @@ handle('launch:start', async (versionId: string) => {
     launchOptions.maxMemory = state.settings.maxMemory;
   }
   const instanceSettings = await readInstanceSettings(repo, versionId);
-  const effectiveOptions = applyInstanceSettings(
-    launchOptions,
-    instanceSettings,
+  return {
     repo,
-    versionId,
-    state.settings.maxMemory,
-    javaExecutable
-  );
+    resolved,
+    auth,
+    options: applyInstanceSettings(
+      launchOptions,
+      instanceSettings,
+      repo,
+      versionId,
+      state.settings.maxMemory,
+      javaExecutable
+    )
+  };
+}
+
+handle('launch:start', async (versionId: string) => {
+  const launchId = state.allocateLaunchId();
+  const abort = new AbortController();
+  state.runningLaunches.set(launchId, abort);
+
+  // Remember the launched instance so the next app open defaults to it.
+  state.settings.lastLaunchedId = versionId;
+  void state.saveSettings();
+
+  const { repo, resolved, auth, options: effectiveOptions } = await resolveLaunchPlan(versionId);
+  const launcher = new Launcher(repo, state.provider());
+  const instanceSettings = await readInstanceSettings(repo, versionId);
 
   // 启动器可见性: keep/hide/close/hide_and_reopen once the game runs.
   const visibility = instanceSettings.launcherVisibility;
@@ -707,6 +733,61 @@ handle('launch:cancel', (launchId: number) => {
   state.runningLaunches.delete(launchId);
   return true;
 });
+
+/**
+ * Writes a runnable script that starts an instance without the launcher.
+ *
+ * HMCL's `Instances#generateLaunchScript` runs the same launch pipeline and
+ * then writes the command line out instead of spawning it
+ * (`DefaultLauncher#makeLaunchScript`). The natives are extracted here for the
+ * same reason: the script has no launcher to do it, and it points at the
+ * per-version natives directory the launcher would have used.
+ *
+ * @returns the written path, or `undefined` when the user cancelled the dialog.
+ */
+handle('launch:save-script', async (versionId: string): Promise<string | undefined> => {
+  const { repo, resolved, auth, options } = await resolveLaunchPlan(versionId);
+  const command = buildLaunchCommand(repo, resolved, auth, options);
+  await cleanNativesDirectory(command.nativesDirectory);
+  await extractNatives(repo, resolved, command.nativesDirectory);
+
+  const filters = scriptFilters();
+  const saveOptions = {
+    title: '保存启动脚本',
+    defaultPath: join(command.workingDirectory, suggestScriptName(versionId)),
+    filters
+  };
+  const parent = win;
+  // The parent may already be gone if the user closed the window while the plan
+  // was being resolved; the dialog then opens parentless instead of failing.
+  const result =
+    parent !== null && !parent.isDestroyed()
+      ? await dialog.showSaveDialog(parent, saveOptions)
+      : await dialog.showSaveDialog(saveOptions);
+  if (result.canceled || result.filePath === undefined || result.filePath === '') return undefined;
+
+  const flavour = scriptFlavour(extname(result.filePath));
+  const windows = CURRENT_OS === 'windows';
+  const text = renderLaunchScript(command.argv, command.workingDirectory, flavour, {
+    preLaunchCommand: options.preLaunchCommand,
+    windows
+  });
+  await writeFile(result.filePath, encodeLaunchScript(text, flavour, windows));
+  if (flavour !== 'ps1') {
+    // Finder and the Linux file managers run a script by its executable bit,
+    // which a freshly written file does not have.
+    await chmod(result.filePath, 0o755).catch(() => undefined);
+  }
+  shell.showItemInFolder(result.filePath);
+  return result.filePath;
+});
+
+/** The extensions the host can run, as save-dialog filters. */
+function scriptFilters(): Array<{ name: string; extensions: string[] }> {
+  const extensions =
+    CURRENT_OS === 'windows' ? ['bat', 'ps1'] : ['sh', 'bash', 'command', 'ps1'];
+  return [{ name: '启动脚本', extensions }];
+}
 
 /**
  * Ends a running game. Answers `false` when there is nothing to end, which is

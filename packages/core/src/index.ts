@@ -32,6 +32,7 @@ export * from './auth/account-store.js';
 export * from './game/instance-settings.js';
 export * from './launch/options.js';
 export * from './launch/command.js';
+export * from './launch/script.js';
 export * from './launch/natives.js';
 export * from './launch/launcher.js';
 export * from './launch/log-line.js';

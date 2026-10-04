@@ -446,6 +446,11 @@ export interface HmclApi {
   launch(versionId: string): Promise<number>;
   cancelLaunch(launchId: number): Promise<boolean>;
   /**
+   * Asks where to save a script that starts this instance without the launcher,
+   * extracts the natives it needs and writes it. `undefined` when cancelled.
+   */
+  saveLaunchScript(versionId: string): Promise<string | undefined>;
+  /**
    * Ends a game that is already running: SIGTERM first, then SIGKILL if it is
    * still alive five seconds later. Nothing to end means false.
    */

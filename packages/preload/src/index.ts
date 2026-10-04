@@ -30,6 +30,7 @@ const api: HmclApi = {
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   launch: (versionId) => ipcRenderer.invoke('launch:start', versionId),
   cancelLaunch: (launchId) => ipcRenderer.invoke('launch:cancel', launchId),
+  saveLaunchScript: (versionId) => ipcRenderer.invoke('launch:save-script', versionId),
   stopGame: (launchId) => ipcRenderer.invoke('launch:stop', launchId),
   openExternal: (url) => ipcRenderer.invoke('shell:open-external', url),
   listAccounts: () => ipcRenderer.invoke('accounts:list'),
