@@ -6,6 +6,7 @@ export * from './platform/os.js';
 export * from './version/types.js';
 export * from './version/artifact.js';
 export * from './version/library.js';
+export * from './version/components.js';
 export * from './version/rules.js';
 export * from './version/arguments.js';
 export * from './version/versionNumber.js';

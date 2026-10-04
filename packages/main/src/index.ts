@@ -42,6 +42,7 @@ import {
   readPackMetadata,
   requiredResourceFormat,
   resolveGameDir,
+  resolveLoaderComponents,
   searchModrinthProjects,
   setResourcePackEnabled,
   supportsNewOptionsFormat,
@@ -269,14 +270,17 @@ handle('versions:list', async () => {
   const versions = await repo.listInstalledVersions();
   const manifests = new Map(versions.map((version) => [version.id, version.manifest]));
   return Promise.all(
-    versions.map(async (version) => ({
-      id: version.id,
-      jar: version.manifest.jar ?? version.id,
-      type: version.manifest.type,
-      gameVersion: resolveGameVersion(version.id, manifests),
-      loaders: resolveLoaders(version.id, manifests),
-      isolated: (await readInstanceSettings(repo, version.id)).gameDirType === 'instance'
-    }))
+    versions.map(async (version) => {
+      const gameVersion = resolveGameVersion(version.id, manifests);
+      return {
+        id: version.id,
+        jar: version.manifest.jar ?? version.id,
+        type: version.manifest.type,
+        gameVersion,
+        loaders: resolveLoaderComponents(chainManifests(version.id, manifests), gameVersion),
+        isolated: (await readInstanceSettings(repo, version.id)).gameDirType === 'instance'
+      };
+    })
   );
 });
 
@@ -296,52 +300,25 @@ function inheritsChain(
   return chain;
 }
 
+/**
+ * The manifests of the `inheritsFrom` chain, from the instance itself up to the
+ * root vanilla version.
+ */
+function chainManifests(
+  id: string,
+  manifests: Map<string, GameVersionJson>
+): GameVersionJson[] {
+  return inheritsChain(id, manifests)
+    .map((versionId) => manifests.get(versionId))
+    .filter((manifest): manifest is GameVersionJson => manifest !== undefined);
+}
+
 /** Walks the `inheritsFrom` chain to the root vanilla version id. */
 function resolveGameVersion(
   id: string,
   manifests: Map<string, GameVersionJson>
 ): string {
   return inheritsChain(id, manifests).at(-1) ?? id;
-}
-
-/**
- * Mod loaders an instance runs, as Modrinth loader slugs.
- *
- * Read from the libraries of the whole `inheritsFrom` chain, the same source
- * HMCL's `getModLoaders` uses: a modpack like `ukuspvpmodpack` declares no
- * loader of its own and only reveals Fabric through the version it inherits
- * from, and matching on the instance name would have called that vanilla.
- */
-function resolveLoaders(
-  id: string,
-  manifests: Map<string, GameVersionJson>
-): string[] {
-  const loaders: string[] = [];
-  for (const versionId of inheritsChain(id, manifests)) {
-    for (const library of manifests.get(versionId)?.libraries ?? []) {
-      const loader = loaderOfLibrary(library.name);
-      if (loader !== undefined && !loaders.includes(loader)) loaders.push(loader);
-    }
-  }
-  return loaders;
-}
-
-/**
- * Maps a `group:artifact` library to the loader slug a mod has to declare on
- * Modrinth to be usable on it.
- *
- * NeoForge is decided before Forge because a NeoForge manifest still ships a
- * couple of `net.minecraftforge` artifacts (srgutils), and OptiFine is left out
- * entirely: it is a client-side patch rather than a Modrinth loader.
- */
-function loaderOfLibrary(name: string): string | undefined {
-  const [group, artifact = ''] = name.split(':');
-  if (group?.startsWith('net.neoforged') || artifact.includes('neoforge')) return 'neoforge';
-  if (group === 'net.minecraftforge' && artifact.startsWith('forge')) return 'forge';
-  if (artifact === 'fabric-loader') return 'fabric';
-  if (group === 'org.quiltmc' && artifact.startsWith('quilt')) return 'quilt';
-  if (artifact === 'liteloader') return 'liteloader';
-  return undefined;
 }
 
 handle('versions:remote', async () => {

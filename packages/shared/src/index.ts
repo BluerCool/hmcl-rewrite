@@ -15,6 +15,16 @@ export interface DownloadProgressDto {
 }
 
 /** A locally installed game version. */
+/** A mod loader an installed instance runs. */
+export interface LoaderComponentDto {
+  /** Modrinth loader slug, what a mod declares to be usable on this loader. */
+  slug: string;
+  /** Display name, HMCL's `install.installer.<slug>`. */
+  label: string;
+  /** The loader's own version, absent when no library names one. */
+  version: string | undefined;
+}
+
 export interface InstalledVersionDto {
   id: string;
   /** Version family for display (e.g. inheritsFrom target or the id). */
@@ -23,10 +33,10 @@ export interface InstalledVersionDto {
   /** Root vanilla game version this instance inherits from. */
   gameVersion: string;
   /**
-   * Mod loaders this instance runs, as Modrinth loader slugs, read from the
-   * libraries of the whole `inheritsFrom` chain. Empty for vanilla instances.
+   * Mod loaders this instance runs, read from the libraries of the whole
+   * `inheritsFrom` chain. Empty for vanilla instances.
    */
-  loaders: string[];
+  loaders: LoaderComponentDto[];
   /**
    * Whether the instance keeps its files in its own version folder instead of
    * the shared `.minecraft` root, i.e. HMCL's 版本隔离.

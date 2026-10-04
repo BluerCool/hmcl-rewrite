@@ -1334,6 +1334,23 @@ function HomePage({ state }: StateHookProps): React.JSX.Element {
 }
 
 /**
+ * The instance list's second line, built the way HMCL's `GameItem#init` builds
+ * the subtitle (`GameItem.java:106-118`): the game version, then every loader
+ * the instance runs as `Label` or `Label: version`.
+ *
+ * The `: version` half is dropped when the version manifest names no library
+ * carrying the loader's version, which is what HMCL does for the same reason
+ * (a NeoForge version json lists only `net.neoforged:*` support libraries).
+ */
+function instanceSubtitle(version: InstalledVersionDto): string {
+  const parts = [version.gameVersion];
+  for (const loader of version.loaders) {
+    parts.push(loader.version === undefined ? loader.label : `${loader.label}: ${loader.version}`);
+  }
+  return parts.join(', ');
+}
+
+/**
  * Whether one instance id survives the list's search text, following HMCL's
  * `GameListPage#createPredicate` (:172-188): a case-insensitive substring match,
  * or a case-insensitive regex when the text starts with `regex:`. A regex that
@@ -1549,7 +1566,7 @@ function InstancesPage({
             </span>
             <div className="instance-info">
               <div className="primary">{version.id}</div>
-              <div className="secondary">{version.type ?? 'unknown'}</div>
+              <div className="secondary">{instanceSubtitle(version)}</div>
             </div>
             <div className="instance-actions">
               <button
@@ -2760,7 +2777,7 @@ function InstallersTab({
   }
 
   const installedMarkers = new Set<string>(
-    state.installed.find((entry) => entry.id === instanceId)?.loaders ?? []
+    state.installed.find((entry) => entry.id === instanceId)?.loaders.map((loader) => loader.slug) ?? []
   );
 
   return (
@@ -3374,7 +3391,7 @@ function recommendationFor(
   if (instance === undefined) return undefined;
   return {
     gameVersion: instance.gameVersion,
-    loaders: instance.loaders,
+    loaders: instance.loaders.map((loader) => loader.slug),
     checkLoaders: kind === 'mod'
   };
 }
