@@ -33,6 +33,7 @@ import {
   installNeoForgeVersion,
   installOptiFineVersion,
   installVanillaVersion,
+  modpackSourceOf,
   optiFineLoaderId,
   packCompatibilityNote,
   parseOptiFineLoaderId,
@@ -278,7 +279,8 @@ handle('versions:list', async () => {
         type: version.manifest.type,
         gameVersion,
         loaders: resolveLoaderComponents(chainManifests(version.id, manifests), gameVersion),
-        isolated: (await readInstanceSettings(repo, version.id)).gameDirType === 'instance'
+        isolated: (await readInstanceSettings(repo, version.id)).gameDirType === 'instance',
+        modpack: modpackSourceOf(version.manifest) ?? undefined
       };
     })
   );

@@ -1565,7 +1565,14 @@ function InstancesPage({
               <GameIcon size={32} />
             </span>
             <div className="instance-info">
-              <div className="primary">{version.id}</div>
+              <div className="primary">
+                <span className="instance-id">{version.id}</span>
+                {/* HMCL's GameItem puts the modpack version in a tag beside the
+                    id (GameItem.java:102-108, GameListCell.java:95-101). */}
+                {version.modpack !== undefined && (
+                  <span className="tag">{version.modpack.version}</span>
+                )}
+              </div>
               <div className="secondary">{instanceSubtitle(version)}</div>
             </div>
             <div className="instance-actions">

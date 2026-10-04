@@ -25,6 +25,18 @@ export interface LoaderComponentDto {
   version: string | undefined;
 }
 
+/** The modpack an instance was installed from. */
+export interface ModpackSourceDto {
+  /** Which of the two formats the installer recognised. */
+  format: 'modrinth' | 'curseforge';
+  name: string;
+  version: string;
+  summary: string | undefined;
+  /** Declared Minecraft version, i.e. the base the pack was built on. */
+  gameVersion: string | undefined;
+  loader: { key: string; version: string } | undefined;
+}
+
 export interface InstalledVersionDto {
   id: string;
   /** Version family for display (e.g. inheritsFrom target or the id). */
@@ -42,6 +54,11 @@ export interface InstalledVersionDto {
    * the shared `.minecraft` root, i.e. HMCL's 版本隔离.
    */
   isolated: boolean;
+  /**
+   * The modpack this instance was installed from, absent for instances that
+   * were not installed from one. Drives the list's tag and its update button.
+   */
+  modpack: ModpackSourceDto | undefined;
 }
 
 /** A remote version from the manifest. */

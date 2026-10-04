@@ -90,6 +90,12 @@ export interface GameVersionJson {
   logging?: Record<string, LoggingJson>;
   minimumLauncherVersion?: number;
   hidden?: boolean;
+  /**
+   * The modpack manifest this version was installed from, kept verbatim by the
+   * modpack installer. Read it through `modpackSourceOf` rather than reaching
+   * into the two formats here.
+   */
+  modpackInfo?: unknown;
 }
 
 /** One entry of the remote version manifest. */

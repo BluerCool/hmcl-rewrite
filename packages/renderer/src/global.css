@@ -656,6 +656,19 @@ body {
 
 .instance-info .primary {
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* A long instance id gives way to the modpack tag rather than pushing the row
+   wider than the list. */
+.instance-info .instance-id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .instance-info .secondary {
