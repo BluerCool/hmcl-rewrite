@@ -15,6 +15,7 @@ import type { AuthInfo } from './auth.js';
 import { buildLaunchCommand, type LaunchCommand } from './command.js';
 import type { LaunchOptions } from './options.js';
 import { cleanNativesDirectory, extractNatives } from './natives.js';
+import { LogLevelTracker, type LogLevel } from './log-line.js';
 import { stopProcess } from './stop.js';
 
 /** Lifecycle stages reported while preparing a launch. */
@@ -31,7 +32,7 @@ export type LaunchStage =
 export type LaunchEvent =
   | { type: 'stage'; stage: LaunchStage }
   | { type: 'download-progress'; progress: DownloadProgress }
-  | { type: 'output'; line: string; isError: boolean }
+  | { type: 'output'; line: string; isError: boolean; level: LogLevel }
   | { type: 'exit'; code: number | null };
 
 /** A game that has been spawned and is still running. */
@@ -200,13 +201,16 @@ function runShellCommand(raw: string, cwd: string): Promise<void> {
 }
 
 function streamOutput(child: ChildProcess, onEvent: (event: LaunchEvent) => void): void {
+  // One tracker for both streams: a stack trace split across stdout and stderr
+  // still belongs to the row that introduced it.
+  const levels = new LogLevelTracker();
   for (const [stream, isError] of [
     [child.stdout, false],
     [child.stderr, true]
   ] as const) {
     if (stream === null) continue;
     const reader = createInterface({ input: stream });
-    reader.on('line', (line) => onEvent({ type: 'output', line, isError }));
+    reader.on('line', (line) => onEvent({ type: 'output', line, isError, level: levels.next(line, isError) }));
   }
 }
 

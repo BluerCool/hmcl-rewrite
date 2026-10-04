@@ -225,6 +225,8 @@ export interface SettingsDto {
   proxyPassword: string | undefined;
   /** UI language */
   language: string | undefined;
+  /** Rows kept in the log drawer, mirroring HMCL's `logLines` setting. */
+  logLines: number | undefined;
 }
 
 /** An account exposed to the renderer (secrets omitted). */

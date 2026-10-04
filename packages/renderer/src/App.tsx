@@ -83,6 +83,11 @@ export interface LogLine {
   isError: boolean;
 }
 
+/** Row caps offered by the log drawer, matching HMCL's combo (LogWindow.java:192). */
+const LOG_LINE_OPTIONS = [500, 2000, 5000, 10000];
+/** HMCL's own default when `logLines` is unset (Log.DEFAULT_LOG_LINES). */
+const DEFAULT_LOG_LINES = 2000;
+
 export type PageId = 'home' | 'accounts' | 'instances' | 'download' | 'settings' | 'terracotta';
 
 /// Titles shown in the Decorator navigation bar, mirroring HMCL's page states.
@@ -219,8 +224,41 @@ export function useLauncherState() {
     setAccounts(await hmcl().listAccounts());
   };
 
+  /**
+   * Appends one line, trimming to the `logLines` setting so a long session cannot
+   * grow without bound (HMCL keeps the same cap, LogWindow.java:140-156).
+   */
   const appendLog = (line: LogLine): void => {
-    setLogs((previous) => [...previous, line].slice(-800));
+    const limit = settings?.logLines ?? DEFAULT_LOG_LINES;
+    setLogs((previous) => [...previous, line].slice(-limit));
+  };
+
+  /** Drops every buffered line, like HMCL's clear button (LogWindow.java:206). */
+  const clearLogs = (): void => {
+    setLogs([]);
+  };
+
+  /**
+   * Writes the buffered session log to a timestamped file and reports where it
+   * went. Shared by the log drawer and the launcher-wide settings tab.
+   */
+  const exportLogs = async (): Promise<void> => {
+    try {
+      const text = logs.map((line) => line.text).join('\n') || '（本启动器会话暂无日志）';
+      const target = await hmcl().exportLogs(text);
+      appendLog({ text: `日志已导出: ${target}`, isError: false });
+    } catch (error) {
+      appendLog({ text: `导出日志失败: ${String(error)}`, isError: true });
+    }
+  };
+
+  /** HMCL's `logLines` combo box; also trims what is already buffered. */
+  const setLogLines = (count: number): void => {
+    setSettings((previous) => (previous === undefined ? previous : { ...previous, logLines: count }));
+    setLogs((previous) => previous.slice(-count));
+    void hmcl()
+      .saveSettings({ logLines: count })
+      .catch((error) => appendLog({ text: String(error), isError: true }));
   };
 
   /**
@@ -366,6 +404,9 @@ export function useLauncherState() {
     refreshInstalled,
     refreshAccounts,
     appendLog,
+    clearLogs,
+    exportLogs,
+    setLogLines,
     reportLaunchFailure,
     runningGameId,
     stopGame,
@@ -1208,6 +1249,12 @@ interface StateHook {
   refreshInstalled: (preferredSettings?: SettingsDto) => Promise<void>;
   refreshAccounts: () => Promise<void>;
   appendLog: (line: LogLine) => void;
+  /** Empties the log buffer; mirrors HMCL's clear button. */
+  clearLogs: () => void;
+  /** Writes the buffered log to a timestamped file under the work directory. */
+  exportLogs: () => Promise<void>;
+  /** Changes the retained row count and persists it as the `logLines` setting. */
+  setLogLines: (count: number) => void;
   reportLaunchFailure: (error: unknown) => void;
   /** Launch id of the game process currently up, undefined when none is. */
   runningGameId: number | undefined;
@@ -5379,16 +5426,7 @@ function JavaSettingsTab({ state }: StateHookProps): React.JSX.Element {
 /** Launcher-wide behavior: update channel, April Fools and log export. */
 function GeneralSettingsTab({ state }: StateHookProps): React.JSX.Element {
   const save = makeSettingsSave(state);
-  const exportLogs = async (): Promise<void> => {
-    try {
-      const text =
-        state.logs.map((line) => line.text).join('\n') || '（本启动器会话暂无日志）';
-      const target = await hmcl().exportLogs(text);
-      state.appendLog({ text: `日志已导出: ${target}`, isError: false });
-    } catch (error) {
-      state.appendLog({ text: `导出日志失败: ${String(error)}`, isError: true });
-    }
-  };
+  const exportLogs = state.exportLogs;
   return (
     <div className="settings-scroll">
       <SettingsTabHeader title="常规" subtitle="更新、杂项与调试选项。" />
@@ -5879,23 +5917,105 @@ function SettingsPage({ state }: StateHookProps): React.JSX.Element {
   );
 }
 
-/** Bottom drawer streaming game output, replacing HMCL's log window. */
+/**
+ * Bottom drawer streaming game output, standing in for HMCL's LogWindow. Keeps
+ * the controls that actually change what you can do with the stream: auto
+ * scroll, word wrap, a row cap, export, terminate and clear. The level filter
+ * row stays out because our lines only carry an isError flag, not a log4j level.
+ */
 function LogDrawer({ state, onClose }: StateHookProps & { onClose: () => void }): React.JSX.Element {
+  const bodyRef = useRef<HTMLPreElement>(null);
+  /** HMCL `logwindow.autoscroll`, on by default (LogWindow.java:409-411). */
+  const [autoScroll, setAutoScroll] = useState(true);
+  /** HMCL `logwindow.wrap_text`, on by default (LogWindow.java:413-415). */
+  const [wrapText, setWrapText] = useState(true);
+  /**
+   * Whether the view is parked at the newest line. Scrolling up pauses the
+   * follow so a wall of new output cannot yank the user away from the error
+   * they just scrolled back to read; HMCL gets the same effect manually via the
+   * checkbox, but only the escape hatch is automatic here.
+   */
+  const [atTail, setAtTail] = useState(true);
+  const follow = autoScroll && atTail;
+
+  useEffect(() => {
+    if (!follow) return;
+    const body = bodyRef.current;
+    if (body !== null) body.scrollTop = body.scrollHeight;
+  }, [state.logs, follow]);
+
+  const onScroll = (): void => {
+    const body = bodyRef.current;
+    if (body === null) return;
+    setAtTail(body.scrollHeight - body.scrollTop - body.clientHeight <= 8);
+  };
+
+  /** Re-arms following and jumps to the newest line in one step. */
+  const jumpToTail = (): void => {
+    setAtTail(true);
+    const body = bodyRef.current;
+    if (body !== null) body.scrollTop = body.scrollHeight;
+  };
+
   return (
     <div className="log-drawer">
       <div className="log-header">
         <span>游戏日志</span>
-        <button className="text-button" onClick={onClose}>
-          关闭
-        </button>
+        <div className="log-header-actions">
+          <label className="field field-row log-field">
+            <span>显示行数</span>
+            <select
+              value={state.settings?.logLines ?? DEFAULT_LOG_LINES}
+              onChange={(event) => state.setLogLines(Number(event.target.value))}
+            >
+              {LOG_LINE_OPTIONS.map((count) => (
+                <option key={count} value={count}>
+                  {count}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="text-button" onClick={onClose}>
+            关闭
+          </button>
+        </div>
       </div>
-      <pre className="log-body">
+      <pre className={`log-body${wrapText ? ' wrap' : ''}`} ref={bodyRef} onScroll={onScroll}>
         {state.logs.map((line, index) => (
           <div key={index} className={line.isError ? 'err' : ''}>
             {line.text}
           </div>
         ))}
       </pre>
+      {!follow && (
+        <button className="log-tail-button" onClick={jumpToTail}>
+          回到最新
+        </button>
+      )}
+      <div className="log-toolbar">
+        <label className="field field-row log-field">
+          <input type="checkbox" checked={autoScroll} onChange={(event) => setAutoScroll(event.target.checked)} />
+          <span>自动滚动</span>
+        </label>
+        <label className="field field-row log-field">
+          <input type="checkbox" checked={wrapText} onChange={(event) => setWrapText(event.target.checked)} />
+          <span>自动换行</span>
+        </label>
+        <button className="text-button" onClick={() => void state.exportLogs()}>
+          导出
+        </button>
+        <button
+          className="text-button"
+          disabled={state.runningGameId === undefined}
+          title={state.runningGameId === undefined ? '游戏未在运行' : '结束游戏进程'}
+          onClick={() => void state.stopGame()}
+        >
+          结束游戏进程
+        </button>
+        <button className="text-button" onClick={state.clearLogs}>
+          清除
+        </button>
+      </div>
     </div>
   );
 }

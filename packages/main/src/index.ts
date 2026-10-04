@@ -111,7 +111,8 @@ const DEFAULT_SETTINGS: SettingsDto = {
   proxyAuth: undefined,
   proxyUsername: undefined,
   proxyPassword: undefined,
-  language: undefined
+  language: undefined,
+  logLines: undefined
 };
 
 /** Application state held by the main process. */
