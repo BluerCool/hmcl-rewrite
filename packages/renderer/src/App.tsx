@@ -59,6 +59,7 @@ import {
   SchemaIcon,
   ScreenshotIcon,
   ScriptIcon,
+  SearchIcon,
   SettingsFillIcon,
   SettingsIcon,
   SunnyFillIcon,
@@ -410,6 +411,10 @@ export function Shell(): React.JSX.Element | null {
   const state = useLauncherState();
   const [page, setPage] = useState<PageId>('home');
   const [downloadDetail, setDownloadDetail] = useState<ModrinthProjectDto | undefined>(undefined);
+  // Which download tab is showing. Held up here rather than inside the page so
+  // the instance list's 安装新游戏 button can select a tab the way HMCL's
+  // DownloadPage#showGameDownloads does (Instances.java:71).
+  const [downloadTab, setDownloadTab] = useState<DlTab>('game');
   const [bgUrl, setBgUrl] = useState<string | undefined>(undefined);
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
@@ -750,11 +755,22 @@ export function Shell(): React.JSX.Element | null {
             <main className="content">
               <div className="page-stage" key={page === 'download' && downloadDetail !== undefined ? `download-detail-${downloadDetail.slug}` : page}>
                 {page === 'accounts' && <AccountsPage state={pageProps} />}
-                {page === 'instances' && <InstancesPage state={pageProps} />}
+                {page === 'instances' && (
+                  <InstancesPage
+                    state={pageProps}
+                    onShowDownloads={(tab) => {
+                      setDownloadDetail(undefined);
+                      setDownloadTab(tab);
+                      setPage('download');
+                    }}
+                  />
+                )}
                 {page === 'download' && (
                   <DownloadPage
                     state={pageProps}
                     detail={downloadDetail}
+                    tab={downloadTab}
+                    onTabChange={setDownloadTab}
                     addonTarget={addonTarget}
                     onAddonTargetChange={setPickedAddonTarget}
                     onOpenDetail={setDownloadDetail}
@@ -1317,12 +1333,89 @@ function HomePage({ state }: StateHookProps): React.JSX.Element {
   );
 }
 
-/** Instance management page: installed version list. */
-function InstancesPage({ state }: StateHookProps): React.JSX.Element {
-  const [renameTarget, setRenameTarget] = useState<string | undefined>(undefined);
-  const [renameValue, setRenameValue] = useState('');
+/**
+ * Whether one instance id survives the list's search text, following HMCL's
+ * `GameListPage#createPredicate` (:172-188): a case-insensitive substring match,
+ * or a case-insensitive regex when the text starts with `regex:`. A regex that
+ * does not compile matches nothing, which is where Java catches
+ * PatternSyntaxException and returns a predicate that is always false.
+ */
+function matchesInstanceSearch(id: string, text: string): boolean {
+  if (text === '') return true;
+  if (text.startsWith('regex:')) {
+    try {
+      return new RegExp(text.slice('regex:'.length), 'i').test(id);
+    } catch {
+      return false;
+    }
+  }
+  return id.toLowerCase().includes(text.toLowerCase());
+}
+
+function InstancesPage({
+  state,
+  onShowDownloads
+}: StateHookProps & { onShowDownloads: (tab: DlTab) => void }): React.JSX.Element {
   /** Pending destructive delete; the instance is only removed once confirmed. */
   const [deleteTarget, setDeleteTarget] = useState<string | undefined>(undefined);
+  const [renameTarget, setRenameTarget] = useState<string | undefined>(undefined);
+  const [renameValue, setRenameValue] = useState('');
+  /**
+   * Search bar state. HMCL swaps the whole toolbar for the field and back
+   * (GameListPage:243-250), so the two modes are exclusive here too.
+   */
+  const [searching, setSearching] = useState(false);
+  const [searchText, setSearchText] = useState('');
+  /**
+   * The text the list is actually filtered by. HMCL waits out a 100ms
+   * PauseTransition before re-running the predicate (GameListPage:231-236), so
+   * that re-filtering 2000 instances does not run on every keystroke.
+   */
+  const [filter, setFilter] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  /** Local modpack chosen from the toolbar, opened in the install wizard. */
+  const [modpackPath, setModpackPath] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setFilter(searchText), 100);
+    return () => clearTimeout(timer);
+  }, [searchText]);
+
+  useEffect(() => {
+    if (searching) searchRef.current?.focus();
+  }, [searching]);
+
+  /** Leaves search mode the way HMCL's close button does: clear and unfilter. */
+  const closeSearch = (): void => {
+    setSearching(false);
+    setSearchText('');
+    setFilter('');
+  };
+
+  const visible = useMemo(
+    () => state.installed.filter((version) => matchesInstanceSearch(version.id, filter)),
+    [state.installed, filter]
+  );
+
+  const refreshList = async (): Promise<void> => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await state.refreshInstalled();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const importModpack = async (): Promise<void> => {
+    try {
+      const picked = await hmcl().pickModpackFile();
+      if (picked !== undefined) setModpackPath(picked);
+    } catch (error) {
+      state.appendLog({ text: String(error), isError: true });
+    }
+  };
 
   /** Permanently removes the instance directory, once confirmed. */
   const deleteInstance = async (): Promise<void> => {
@@ -1379,11 +1472,58 @@ function InstancesPage({ state }: StateHookProps): React.JSX.Element {
   return (
     <div className="page list-page">
       <h2 className="page-title">实例列表</h2>
+      <div className="instance-list-toolbar">
+        {searching ? (
+          <>
+            <div className="search-field instance-list-search">
+              <input
+                ref={searchRef}
+                value={searchText}
+                placeholder="搜索"
+                aria-label="搜索实例"
+                onChange={(e) => setSearchText(e.target.value)}
+                // HMCL closes the bar on ESC from the field (GameListPage:242).
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') closeSearch();
+                }}
+              />
+            </div>
+            <button
+              className="icon-button"
+              title="关闭搜索"
+              aria-label="关闭搜索"
+              onClick={closeSearch}
+            >
+              <CloseIcon size={17} />
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="text-button" onClick={() => void refreshList()}>
+              <RefreshIcon size={15} /> 刷新
+            </button>
+            <button className="text-button" onClick={() => onShowDownloads('game')}>
+              <DownloadIcon size={15} /> 安装新游戏
+            </button>
+            <button className="text-button" onClick={() => void importModpack()}>
+              <PackageIcon size={15} /> 安装整合包
+            </button>
+            <button className="text-button" onClick={() => setSearching(true)}>
+              <SearchIcon size={15} /> 搜索
+            </button>
+          </>
+        )}
+      </div>
       {menuFor !== undefined && (
         <button className="menu-backdrop" aria-label="关闭菜单" onClick={() => setMenuFor(undefined)} />
       )}
+      {searching && visible.length === 0 && (
+        // HMCL binds this label to isSearching and shows it as the list's
+        // placeholder, so it is only visible while the filtered list is empty.
+        <div className="notice-pane">搜索无结果</div>
+      )}
       <ul className="instance-list">
-        {state.installed.map((version) => (
+        {visible.map((version) => (
           <li
             key={version.id}
             className={`card instance-card${version.id === state.currentId ? ' selected' : ''}`}
@@ -1522,6 +1662,10 @@ function InstancesPage({ state }: StateHookProps): React.JSX.Element {
             </div>
           </div>
         </div>
+      )}
+
+      {modpackPath !== undefined && (
+        <ModpackInstallPage state={state} localPath={modpackPath} onClose={() => setModpackPath(undefined)} />
       )}
     </div>
   );
@@ -3024,6 +3168,8 @@ type StateHookProps = { state: StateHook };
 function DownloadPage({
   state,
   detail,
+  tab,
+  onTabChange,
   addonTarget,
   onAddonTargetChange,
   onOpenDetail,
@@ -3031,12 +3177,17 @@ function DownloadPage({
 }: {
   state: StateHook;
   detail: ModrinthProjectDto | undefined;
+  /** Held by the shell so the instance list can pick a tab (showGameDownloads). */
+  tab: DlTab;
+  onTabChange: (tab: DlTab) => void;
   addonTarget: AddonTarget;
   onAddonTargetChange: (target: string | undefined) => void;
   onOpenDetail: (project: ModrinthProjectDto) => void;
   onCloseDetail: () => void;
 }): React.JSX.Element {
-  const [tab, setTab] = useState<DlTab>('game');
+  // The tab now comes from the shell, which holds it so the instance list's
+  // 安装新游戏 button can select one before this page mounts.
+  const setTab = onTabChange;
   const [install, setInstall] = useState<
     { project: ModrinthProjectDto; version: ModrinthVersionDto } | undefined
   >(undefined);
