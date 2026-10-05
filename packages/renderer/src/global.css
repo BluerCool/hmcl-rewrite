@@ -193,6 +193,10 @@ body {
   user-select: none;
 }
 
+.titlebar.transparent {
+  background: transparent;
+}
+
 .titlebar-drag {
   display: flex;
   align-items: center;
@@ -2337,7 +2341,11 @@ html.has-bg .nav-bar {
   background-color: color-mix(in srgb, var(--monet-surface-container-low) 82%, transparent);
 }
 
-html.has-bg .titlebar {
+/* HMCL 标题栏透明: the bar stops painting so the background image or the
+   translucent window shows through. It has to be gated here rather than in the
+   base .titlebar rule, because the two html.* rules below are more specific and
+   would otherwise keep painting the bar. */
+html.has-bg .titlebar:not(.transparent) {
   background-color: color-mix(in srgb, var(--monet-primary-container) 82%, transparent);
 }
 
@@ -2375,7 +2383,7 @@ html.transparent-bg .dl-list-card {
   background-color: color-mix(in srgb, var(--monet-surface-container-lowest) 78%, transparent);
 }
 
-html.transparent-bg .titlebar {
+html.transparent-bg .titlebar:not(.transparent) {
   background-color: color-mix(in srgb, var(--monet-primary-container) 72%, transparent);
 }
 
@@ -2939,7 +2947,8 @@ html.transparent-bg .launcher-bg::after {
   overflow: hidden;
 }
 
-.settings-section-list > .settings-row {
+.settings-section-list > .settings-row,
+.settings-section-list > .settings-choice {
   border-top: 1px solid var(--monet-outline-variant);
 }
 
@@ -3033,6 +3042,40 @@ html.transparent-bg .launcher-bg::after {
   resize: vertical;
   min-height: 60px;
   font-family: monospace;
+}
+
+/* A RadioChoiceList choice. The label sits left of the radio rather than the
+   checkbox-on-the-right arrangement of a boolean row, because this row's whole
+   point is that you can see every option at once. */
+.settings-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background-color 120ms;
+}
+
+.settings-choice:hover {
+  background: color-mix(in srgb, var(--monet-on-surface) 4%, transparent);
+}
+
+.settings-choice.checked {
+  background: color-mix(in srgb, var(--monet-primary) 6%, transparent);
+}
+
+.settings-choice-radio {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--monet-primary);
+  cursor: pointer;
+}
+
+.settings-choice > .settings-row-label {
+  flex: 1;
+  min-width: 0;
 }
 
 /* Controls placed directly in a .settings-row (not wrapped in a

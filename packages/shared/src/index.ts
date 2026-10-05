@@ -269,7 +269,14 @@ export interface SettingsDto {
   selectedAccountId: string | undefined;
   /** Azure application client id used for Microsoft logins. */
   microsoftClientId: string | undefined;
-  /** Accent color for the Material-you theme (e.g. `#4352a5`); undefined = default. */
+  /**
+   * Accent color for the Material-you theme (e.g. `#4352a5`); undefined = default.
+   *
+   * HMCL splits this in two: `themeColorType` picks where the accent comes from
+   * (ThemeColorType.DEFAULT / SYSTEM / CUSTOM), and `themeColor` only holds a
+   * value while the type is CUSTOM. We keep the flat `themeColor` because the
+   * renderer derives the CSS variables straight from it.
+   */
   themeColor: string | undefined;
   /** Path to a background image copied under userData; undefined/'' = no background. */
   themeBackground: string | undefined;
@@ -277,8 +284,18 @@ export interface SettingsDto {
   aprilFools: boolean | undefined;
   /** Update channel controlling which releases the banner advertises. */
   updateChannel: 'stable' | 'dev' | undefined;
-  /** Whether the OS window itself is translucent (HMCL 透明背景; Linux needs a compositor). */
+  /** Whether the OS window itself is translucent (HMCL 窗口透明; Linux needs a compositor). */
   launcherBackgroundTransparent: boolean | undefined;
+  /**
+   * Whether the in-app title bar drops its own background so the window's
+   * translucency shows through (HMCL 标题栏透明, `titleBarTransparent`).
+   */
+  titleBarTransparent: boolean | undefined;
+  /**
+   * Theme color source, mirroring HMCL's `ThemeColorType`. HMCL's `system` value
+   * is omitted until the OS accent color can be read.
+   */
+  themeColorType: 'default' | 'custom' | undefined;
   /** The currently selected game instance id; restored on startup. */
   selectedInstanceId: string | undefined;
   /** The most recently launched game instance id; preferred on startup. */

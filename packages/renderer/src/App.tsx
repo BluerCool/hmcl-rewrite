@@ -489,6 +489,9 @@ export function Shell(): React.JSX.Element | null {
       if (value === undefined || value === '') root.style.removeProperty(name);
       else root.style.setProperty(name, value);
     };
+    // A stored color overrides the built-in blue; absent means 默认. `themeColorType`
+    // only records which option of the 外观 three-way choice is ticked, so it does
+    // not gate the value — the 外观 tab clears the color when you pick 默认.
     const accent = state.settings?.themeColor;
     setVar('--monet-primary', accent);
     setVar('--monet-primary-container', accent);
@@ -625,7 +628,7 @@ export function Shell(): React.JSX.Element | null {
           style={{ backgroundImage: `url("${bgUrl}")` }}
         />
       )}
-      <div className="titlebar">
+      <div className={`titlebar${state.settings.titleBarTransparent === true ? ' transparent' : ''}`}>
         <div className="titlebar-drag">
           {navBack !== undefined && (
             <button
@@ -6004,6 +6007,60 @@ function makeSettingsSave(state: StateHook): (partial: Partial<SettingsDto>) => 
   };
 }
 
+/**
+ * Settings are stored as `true` or absent, never as an explicit `false`, so an
+ * off toggle leaves no trace in settings.json. `JSON.stringify` drops the
+ * `undefined`, which is what makes "absent" and "off" the same state.
+ */
+function enabled(value: boolean | undefined): true | undefined {
+  return value === true ? true : undefined;
+}
+
+/**
+ * One choice of a mutually exclusive group, mirroring HMCL's
+ * `RadioChoiceList.Choice`: a radio on the right, a title and optional subtitle
+ * on the left. Unlike a <select>, every option stays visible, which is what lets
+ * a choice carry its own control (HMCL hangs the theme-color picker off the
+ * 自定义颜色 option) or its own subtitle.
+ */
+function SettingsChoice({
+  title,
+  subtitle,
+  name,
+  value,
+  checked,
+  onSelect,
+  children
+}: {
+  title: string;
+  subtitle?: string | undefined;
+  name: string;
+  value: string;
+  checked: boolean;
+  onSelect: () => void;
+  children?: React.ReactNode;
+}): React.JSX.Element {
+  // A <label> rather than a div, so the whole row selects the option the way
+  // HMCL's RadioChoiceList does — no hit-target to get wrong.
+  return (
+    <label className={`settings-choice${checked ? ' checked' : ''}`}>
+      <input
+        type="radio"
+        className="settings-choice-radio"
+        name={name}
+        value={value}
+        checked={checked}
+        onChange={onSelect}
+      />
+      <div className="settings-row-label">
+        <span>{title}</span>
+        {subtitle !== undefined && <span className="settings-row-subtitle">{subtitle}</span>}
+      </div>
+      {children}
+    </label>
+  );
+}
+
 /** Page header shown on top of each settings tab: title plus a short hint. */
 function SettingsTabHeader({ title, subtitle }: { title: string; subtitle: string }): React.JSX.Element {
   return (
@@ -6158,6 +6215,28 @@ function JavaSettingsTab({ state }: StateHookProps): React.JSX.Element {
   );
 }
 
+/**
+ * Opens the log folder. Both log actions are best-effort — they hand off to the
+ * desktop's file manager, which may not exist — so a failure goes to the log
+ * rather than becoming an unhandled rejection.
+ */
+const openLogFolder = (state: StateHook): void => {
+  void hmcl()
+    .openLogFolder()
+    .catch((error: unknown) =>
+      state.appendLog({ text: `打开日志文件夹失败: ${String(error)}`, isError: true })
+    );
+};
+
+/** Writes the session log to a timestamped file and reveals it. */
+const exportLogs = (state: StateHook): void => {
+  void state
+    .exportLogs()
+    .catch((error: unknown) =>
+      state.appendLog({ text: `导出日志失败: ${String(error)}`, isError: true })
+    );
+};
+
 /** Launcher-wide behavior: update channel, April Fools and log export. */
 function GeneralSettingsTab({ state }: StateHookProps): React.JSX.Element {
   const save = makeSettingsSave(state);
@@ -6208,10 +6287,10 @@ function GeneralSettingsTab({ state }: StateHookProps): React.JSX.Element {
           onCheckChange={(checked) => save({ aprilFools: checked ? undefined : true })}
         />
         <SettingsRow title="调试" subtitle="启动器日志位于用户数据目录的 logs 文件夹">
-          <button className="border-button" onClick={() => void hmcl().openLogFolder()}>
+          <button className="border-button" onClick={() => openLogFolder(state)}>
             打开日志文件夹
           </button>
-          <button className="border-button" onClick={() => void state.exportLogs()}>
+          <button className="border-button" onClick={() => exportLogs(state)}>
             导出启动器日志
           </button>
         </SettingsRow>
@@ -6231,7 +6310,15 @@ function AppearanceSettingsTab({ state }: StateHookProps): React.JSX.Element {
       state.appendLog({ text: `选择背景图失败: ${String(error)}`, isError: true });
     }
   };
+  const background = state.settings.themeBackground;
+  // A stored color with no type predates the three-way choice (there was only a
+  // color input before), so it has to keep counting as custom — otherwise an
+  // existing configuration would silently fall back to the built-in blue.
+  const customColor =
+    state.settings.themeColorType === 'custom' ||
+    (state.settings.themeColorType === undefined && state.settings.themeColor !== undefined);
   const transparent = state.settings.launcherBackgroundTransparent ?? false;
+  const titleBarTransparent = state.settings.titleBarTransparent ?? false;
   const reapplyTransparency = (): void => {
     void hmcl()
       .fixBackgroundTransparency()
@@ -6245,42 +6332,71 @@ function AppearanceSettingsTab({ state }: StateHookProps): React.JSX.Element {
     <div className="settings-scroll">
       <SettingsTabHeader title="外观" subtitle="主题色、背景与窗口透明。" />
       <SettingsSection title="主题">
-        <SettingsRow title="主色调">
-          <input
-            type="color"
-            className="color-input"
-            value={state.settings.themeColor ?? DEFAULT_THEME_COLOR}
-            onChange={(event) => save({ themeColor: event.target.value })}
-          />
-          <button
-            className="border-button"
-            disabled={state.settings.themeColor === undefined}
-            onClick={() => save({ themeColor: undefined })}
-          >
-            恢复默认
-          </button>
-        </SettingsRow>
+        <SettingsChoice
+          title="默认"
+          subtitle="使用启动器内置的主题色"
+          name="theme-color-type"
+          value="default"
+          checked={!customColor}
+          onSelect={() => save({ themeColor: undefined, themeColorType: undefined })}
+        />
+        {/* HMCL also has 跟随系统 here, which needs the OS accent color; Electron
+            exposes no cross-platform API for it, so it waits. */}
+        <SettingsChoice
+          title="自定义颜色"
+          subtitle={customColor ? (state.settings.themeColor ?? '') : '启用此选项，自定义启动器主题色'}
+          name="theme-color-type"
+          value="custom"
+          checked={customColor}
+          onSelect={() =>
+            save({
+              themeColor: state.settings.themeColor ?? DEFAULT_THEME_COLOR,
+              themeColorType: 'custom'
+            })
+          }
+        >
+          {customColor && (
+            <input
+              type="color"
+              className="color-input"
+              value={state.settings.themeColor ?? DEFAULT_THEME_COLOR}
+              onChange={(event) => save({ themeColor: event.target.value })}
+            />
+          )}
+        </SettingsChoice>
       </SettingsSection>
       <SettingsSection title="启动器背景">
-        <SettingsRow title="背景图" subtitle={state.settings.themeBackground ?? '未选择'}>
-          <button className="border-button" onClick={() => void pickBackground()}>
-            选择…
-          </button>
-          <button
-            className="border-button"
-            disabled={!state.settings.themeBackground}
-            onClick={() => save({ themeBackground: undefined })}
-          >
-            移除
-          </button>
-        </SettingsRow>
-        <SettingsRow
-          title="透明背景"
-          subtitle="Linux 下需要桌面合成器支持"
-          check={transparent}
-          onCheckChange={(checked) => save({ launcherBackgroundTransparent: checked })}
+        <SettingsChoice
+          title="默认"
+          subtitle="使用启动器内置的背景"
+          name="background-type"
+          value="default"
+          checked={background === undefined}
+          onSelect={() => save({ themeBackground: undefined })}
         />
-        <SettingsRow title="透明背景未生效" subtitle="重新应用一次透明背景设置">
+        <SettingsChoice
+          title="自定义"
+          subtitle={background ?? '启用此选项，自定义启动器背景'}
+          name="background-type"
+          value="custom"
+          checked={background !== undefined}
+          onSelect={() => void pickBackground()}
+        />
+      </SettingsSection>
+      <SettingsSection title="窗口">
+        <SettingsRow
+          title="标题栏透明"
+          subtitle="标题栏不再绘制自己的底色"
+          check={titleBarTransparent}
+          onCheckChange={(checked) => save({ titleBarTransparent: enabled(checked) })}
+        />
+        <SettingsRow
+          title="窗口透明"
+          subtitle="Linux 下需要桌面合成器（Compositor）支持"
+          check={transparent}
+          onCheckChange={(checked) => save({ launcherBackgroundTransparent: enabled(checked) })}
+        />
+        <SettingsRow title="透明未生效" subtitle="重新应用一次透明背景设置">
           <button className="border-button" disabled={!transparent} onClick={reapplyTransparency}>
             尝试修复
           </button>
@@ -6372,7 +6488,7 @@ function DownloadSettingsTab({ state }: StateHookProps): React.JSX.Element {
         <SettingsRow
           title="使用代理"
           check={state.settings.useProxy ?? false}
-          onCheckChange={(checked) => save({ useProxy: checked })}
+          onCheckChange={(checked) => save({ useProxy: enabled(checked) })}
         />
         {state.settings.useProxy === true && (
           <>
@@ -6404,7 +6520,7 @@ function DownloadSettingsTab({ state }: StateHookProps): React.JSX.Element {
             <SettingsRow
               title="需要认证"
               check={state.settings.proxyAuth ?? false}
-              onCheckChange={(checked) => save({ proxyAuth: checked })}
+              onCheckChange={(checked) => save({ proxyAuth: enabled(checked) })}
             />
             {state.settings.proxyAuth === true && (
               <>

@@ -114,6 +114,8 @@ const DEFAULT_SETTINGS: SettingsDto = {
   aprilFools: undefined as boolean | undefined,
   updateChannel: undefined as 'stable' | 'dev' | undefined,
   launcherBackgroundTransparent: undefined as boolean | undefined,
+  titleBarTransparent: undefined as boolean | undefined,
+  themeColorType: undefined as 'default' | 'custom' | undefined,
   selectedInstanceId: undefined as string | undefined,
   lastLaunchedId: undefined as string | undefined,
   fileDownloadSource: undefined,
@@ -551,7 +553,16 @@ handle('logs:export', async () => {
 handle('logs:open-folder', async () => {
   const dir = launcherLogDir();
   await mkdir(dir, { recursive: true });
-  const error = await shell.openPath(dir);
+  // openPath hands the directory to the desktop's file manager. When there isn't
+  // one to hand off to it never resolves, which would leave the caller awaiting
+  // a reply forever — so it gets a deadline and reports the timeout as a failure
+  // like any other open error.
+  const error = await Promise.race([
+    shell.openPath(dir),
+    new Promise<string>((resolve) =>
+      setTimeout(() => resolve('打开文件夹超时：系统没有可用的文件管理器'), 5000).unref()
+    )
+  ]);
   if (error !== '') throw new Error(error);
 });
 
