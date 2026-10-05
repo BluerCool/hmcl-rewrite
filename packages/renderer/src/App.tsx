@@ -72,6 +72,7 @@ import {
   WikiIcon,
   ArrowBackIcon,
   EditIcon,
+  HelpIcon,
   MoreVertIcon
 } from './icons';
 import { offlineUuid } from './md5';
@@ -454,6 +455,9 @@ export function Shell(): React.JSX.Element | null {
         const loaded = await hmcl().getSettings();
         if (disposed) return;
         state.setSettings(loaded);
+        // The Java list is read from the Java 管理 tab, which is not mounted at
+        // startup, so it has to be fetched here rather than by that tab.
+        state.setJavas(await hmcl().detectJava());
         await Promise.all([state.refreshInstalled(loaded), state.refreshAccounts()]);
       } catch (error) {
         state.appendLog({ text: `初始化失败: ${String(error)}`, isError: true });
@@ -6010,32 +6014,103 @@ function SettingsTabHeader({ title, subtitle }: { title: string; subtitle: strin
   );
 }
 
+/**
+ * One titled block of setting rows.
+ *
+ * This is HMCL's `ComponentList.createComponentListTitle` followed by the
+ * `ComponentList` it titles: a plain label above a rounded, gapless list of
+ * rows. `help` is the second argument of `createComponentListTitle`, the little
+ * question mark whose tooltip explains the section.
+ *
+ * Both settings surfaces — the instance panel and the launcher's own tabs — are
+ * built from this, which is why they look the same.
+ */
+function SettingsSection({
+  title,
+  help,
+  children
+}: {
+  title: string;
+  help?: string;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <div className="settings-section">
+      <div className="settings-section-title">
+        {title}
+        {help !== undefined && (
+          <span className="settings-section-help" title={help} aria-label={help}>
+            <HelpIcon size={14} />
+          </span>
+        )}
+      </div>
+      <div className="settings-section-list">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * One row of a {@link SettingsSection}, mirroring HMCL's `LineComponent`: a 13px
+ * title with an optional 12px subtitle on the left, the control on the right.
+ *
+ * The control is left out for rows that only display something read-only — a
+ * path, a version — which then spans the full width like a `Subtitle` line in
+ * HMCL. Pass `check` for a boolean row, so the checkbox sits on the right where
+ * HMCL puts it instead of being smuggled in through `children`.
+ */
+function SettingsRow({
+  title,
+  subtitle,
+  check,
+  onCheckChange,
+  children
+}: {
+  title: string;
+  subtitle?: string;
+  check?: boolean;
+  onCheckChange?: (checked: boolean) => void;
+  children?: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <div className="settings-row">
+      <div className="settings-row-label">
+        <span>{title}</span>
+        {subtitle !== undefined && <span className="settings-row-subtitle">{subtitle}</span>}
+      </div>
+      {check !== undefined && (
+        <input
+          type="checkbox"
+          className="settings-row-check"
+          checked={check}
+          onChange={(event) => onCheckChange?.(event.target.checked)}
+        />
+      )}
+      {children}
+    </div>
+  );
+}
+
 /** HMCL keeps a repository of Minecraft versions, managed in this tab. */
 function GameSettingsTab({ state }: StateHookProps): React.JSX.Element {
   const save = makeSettingsSave(state);
   return (
     <div className="settings-scroll">
       <SettingsTabHeader title="版本管理" subtitle="管理游戏版本、内存分配与游戏目录。" />
-      <div className="component-title">基础</div>
-      <div className="card settings-card">
-        <div className="card-title">内存</div>
-        <label className="field">
-          <span>最大内存（MiB）</span>
+      <SettingsSection title="基础">
+        <SettingsRow title="最大内存（MiB）" subtitle="留给游戏的堆大小">
           <input
             type="number"
-            defaultValue={state.settings.maxMemory ?? 4096}
-            onBlur={(event) => save({ maxMemory: Number(event.target.value) || undefined })}
+            value={state.settings.maxMemory ?? 4096}
+            min={128}
+            onChange={(event) => save({ maxMemory: Number(event.target.value) || undefined })}
           />
-        </label>
-      </div>
-      <div className="component-title">游戏</div>
-      <div className="card settings-card">
-        <div className="card-title">游戏目录</div>
-        <div className="field">
-          <span>当前游戏目录</span>
-          <code>{state.settings.gameDir}</code>
-        </div>
-      </div>
+        </SettingsRow>
+      </SettingsSection>
+      <SettingsSection title="游戏">
+        <SettingsRow title="当前游戏目录" subtitle="所有非隔离实例共用的目录">
+          <code className="settings-row-value">{state.settings.gameDir}</code>
+        </SettingsRow>
+      </SettingsSection>
     </div>
   );
 }
@@ -6043,95 +6118,42 @@ function GameSettingsTab({ state }: StateHookProps): React.JSX.Element {
 /** Java runtime detection and selection, mirroring HMCL's Java 管理 tab. */
 function JavaSettingsTab({ state }: StateHookProps): React.JSX.Element {
   const save = makeSettingsSave(state);
-  const [detectedJavas, setDetectedJavas] = useState<JavaRuntimeDto[]>([]);
-  const [customJavaPath, setCustomJavaPath] = useState('');
-  const [useCustomJava, setUseCustomJava] = useState(false);
 
-  const detectJava = async (): Promise<void> => {
-    const runtimes = await hmcl().detectJava();
-    setDetectedJavas(runtimes);
-  };
-
-  const pickCustomJava = async (): Promise<void> => {
+  const pickJava = async (): Promise<void> => {
     const path = await hmcl().pickJavaExecutable();
-    if (path !== undefined) {
-      setCustomJavaPath(path);
-      save({ javaExecutable: path });
-    }
+    if (path !== undefined) save({ javaExecutable: path });
   };
-
-  useEffect(() => {
-    detectJava();
-  }, []);
 
   return (
     <div className="settings-scroll">
       <SettingsTabHeader title="Java 管理" subtitle="检测并选择用于启动游戏的 Java 运行时。" />
-      
-      <div className="component-title">运行时选择</div>
-      <div className="card settings-card">
-        <div className="card-title">Java 运行时</div>
-        
-        <label className="field field-row">
-          <input
-            type="radio"
-            name="java-mode"
-            checked={!state.settings.javaExecutable}
-            onChange={() => save({ javaExecutable: undefined })}
+      <SettingsSection title="Java 运行时">
+        <SettingsRow
+          title="自动检测"
+          subtitle="按游戏版本挑选合适的 JRE"
+          check={state.settings.javaExecutable === undefined}
+          onCheckChange={() => save({ javaExecutable: undefined })}
+        />
+        {state.javas.map((java) => (
+          <SettingsRow
+            key={java.executable}
+            title={`Java ${java.versionString}`}
+            subtitle={java.executable}
+            check={java.executable === state.settings.javaExecutable}
+            onCheckChange={() => save({ javaExecutable: java.executable })}
           />
-          <span>自动检测 (推荐)</span>
-        </label>
-        
-        <label className="field field-row">
-          <input
-            type="radio"
-            name="java-mode"
-            checked={!!state.settings.javaExecutable}
-            onChange={() => {}}
-          />
-          <span>指定 Java 路径</span>
-        </label>
-
-        {state.settings.javaExecutable && (
-          <div className="field field-row">
-            <input
-              type="text"
-              value={state.settings.javaExecutable}
-              placeholder="选择 Java 可执行文件路径"
-              readOnly
-            />
-            <button className="border-button" onClick={async () => {
-              const path = await hmcl().pickJavaExecutable();
-              if (path) save({ javaExecutable: path });
-            }}>
-              浏览…
-            </button>
-          </div>
-        )}
-
-        <div className="field">
-          <span>已检测到的 Java 运行时</span>
-          <button className="text-button" onClick={async () => {
-            const runtimes = await hmcl().detectJava();
-            // refresh handled by main process
-          }}>
-            重新检测
+        ))}
+        <SettingsRow title="自定义路径" subtitle={state.settings.javaExecutable ?? '未选择'}>
+          <button className="border-button" onClick={() => void pickJava()}>
+            浏览…
           </button>
-        </div>
-        <ul className="java-list">
-          {state.javas.map((java) => (
-            <li
-              key={java.executable}
-              className={java.executable === state.settings.javaExecutable ? 'selected' : ''}
-              onClick={() => save({ javaExecutable: java.executable })}
-            >
-              Java {java.versionString}
-              <code>{java.executable}</code>
-            </li>
-          ))}
-          {state.javas.length === 0 && <li className="empty">未检测到 Java，点击重新检测</li>}
-        </ul>
-      </div>
+        </SettingsRow>
+      </SettingsSection>
+      {state.javas.length === 0 && (
+        <p className="notice-text">
+          未检测到 Java 运行时。安装一个 JRE 8 或更高版本后重新进入本页即可看到。
+        </p>
+      )}
     </div>
   );
 }
@@ -6139,15 +6161,11 @@ function JavaSettingsTab({ state }: StateHookProps): React.JSX.Element {
 /** Launcher-wide behavior: update channel, April Fools and log export. */
 function GeneralSettingsTab({ state }: StateHookProps): React.JSX.Element {
   const save = makeSettingsSave(state);
-  const exportLogs = state.exportLogs;
   return (
     <div className="settings-scroll">
       <SettingsTabHeader title="常规" subtitle="更新、杂项与调试选项。" />
-      <div className="component-title">更新</div>
-      <div className="card settings-card">
-        <div className="card-title">更新推送</div>
-        <div className="field">
-          <span>更新频道</span>
+      <SettingsSection title="更新">
+        <SettingsRow title="更新频道" subtitle="开发版会一起收到尚未发布的构建">
           <select
             value={state.settings.updateChannel ?? 'stable'}
             onChange={(event) =>
@@ -6157,32 +6175,10 @@ function GeneralSettingsTab({ state }: StateHookProps): React.JSX.Element {
             <option value="stable">稳定版</option>
             <option value="dev">开发版</option>
           </select>
-        </div>
-      </div>
-      <div className="component-title">杂项</div>
-      <div className="card settings-card">
-        <div className="card-title">杂项设置</div>
-        <label className="field field-row">
-          <input
-            type="checkbox"
-            checked={state.settings.aprilFools ?? false}
-            onChange={(event) => save({ aprilFools: event.target.checked })}
-          />
-          <span>愚人节彩蛋</span>
-        </label>
-        <label className="field">
-          <span>默认玩家名（离线登录）</span>
-          <input
-            defaultValue={state.settings.playerName}
-            onBlur={(event) => save({ playerName: event.target.value })}
-          />
-        </label>
-      </div>
-      <div className="component-title">语言</div>
-      <div className="card settings-card">
-        <div className="card-title">语言</div>
-        <label className="field">
-          <span>界面语言</span>
+        </SettingsRow>
+      </SettingsSection>
+      <SettingsSection title="语言">
+        <SettingsRow title="界面语言">
           <select
             value={state.settings.language ?? 'zh_cn'}
             onChange={(event) => save({ language: event.target.value })}
@@ -6198,18 +6194,25 @@ function GeneralSettingsTab({ state }: StateHookProps): React.JSX.Element {
             <option value="es_es">Español</option>
             <option value="pt_br">Português (Brasil)</option>
           </select>
-        </label>
-      </div>
-      <div className="component-title">调试</div>
-      <div className="card settings-card">
-        <div className="card-title">启动器日志</div>
-        <div className="field">
-          <span>导出当前会话日志</span>
-          <button className="text-button" onClick={() => void exportLogs()}>
+        </SettingsRow>
+      </SettingsSection>
+      <SettingsSection title="杂项">
+        <SettingsRow title="愚人节彩蛋" check={state.settings.aprilFools ?? false} onCheckChange={(checked) => save({ aprilFools: checked })} />
+        <SettingsRow title="默认玩家名" subtitle="离线登录时使用的名字">
+          <input
+            value={state.settings.playerName ?? ''}
+            placeholder="Steve"
+            onChange={(event) => save({ playerName: event.target.value })}
+          />
+        </SettingsRow>
+      </SettingsSection>
+      <SettingsSection title="调试">
+        <SettingsRow title="导出当前会话日志" subtitle="写入带时间戳的日志文件">
+          <button className="border-button" onClick={() => void state.exportLogs()}>
             导出日志
           </button>
-        </div>
-      </div>
+        </SettingsRow>
+      </SettingsSection>
     </div>
   );
 }
@@ -6225,14 +6228,21 @@ function AppearanceSettingsTab({ state }: StateHookProps): React.JSX.Element {
       state.appendLog({ text: `选择背景图失败: ${String(error)}`, isError: true });
     }
   };
+  const transparent = state.settings.launcherBackgroundTransparent ?? false;
+  const reapplyTransparency = (): void => {
+    void hmcl()
+      .fixBackgroundTransparency()
+      .then(() => state.appendLog({ text: '已重新应用透明背景', isError: false }))
+      .catch((error) =>
+        state.appendLog({ text: `修复透明背景失败: ${String(error)}`, isError: true })
+      );
+  };
+
   return (
     <div className="settings-scroll">
       <SettingsTabHeader title="个性化" subtitle="定制启动器外观与主题。" />
-      <div className="component-title">主题</div>
-      <div className="card settings-card">
-        <div className="card-title">主题色</div>
-        <div className="field field-row">
-          <span>主色调</span>
+      <SettingsSection title="主题">
+        <SettingsRow title="主色调">
           <input
             type="color"
             className="color-input"
@@ -6240,67 +6250,39 @@ function AppearanceSettingsTab({ state }: StateHookProps): React.JSX.Element {
             onChange={(event) => save({ themeColor: event.target.value })}
           />
           <button
-            className="text-button"
+            className="border-button"
             disabled={state.settings.themeColor === undefined}
             onClick={() => save({ themeColor: undefined })}
           >
             恢复默认
           </button>
-        </div>
-      </div>
-      <div className="component-title">背景</div>
-      <div className="card settings-card">
-        <div className="card-title">启动器背景</div>
-        <div className="field field-row">
-          <span>背景图</span>
-          <button className="text-button" onClick={() => void pickBackground()}>
-            选择背景图…
+        </SettingsRow>
+      </SettingsSection>
+      <SettingsSection title="启动器背景">
+        <SettingsRow title="背景图" subtitle={state.settings.themeBackground ?? '未选择'}>
+          <button className="border-button" onClick={() => void pickBackground()}>
+            选择…
           </button>
           <button
-            className="text-button"
+            className="border-button"
             disabled={!state.settings.themeBackground}
             onClick={() => save({ themeBackground: undefined })}
           >
-            移除背景图
+            移除
           </button>
-        </div>
-      </div>
-      <div className="component-title">透明</div>
-      <div className="card settings-card">
-        <div className="card-title">透明背景</div>
-        <label className="field field-row">
-          <input
-            type="checkbox"
-            checked={state.settings.launcherBackgroundTransparent ?? false}
-            onChange={(event) =>
-              save({ launcherBackgroundTransparent: event.target.checked })
-            }
-          />
-          <span>启用透明背景</span>
-        </label>
-        <div className="field field-row">
-          <span>若透明背景未生效</span>
-          <button
-            className="text-button"
-            disabled={!(state.settings.launcherBackgroundTransparent ?? false)}
-            onClick={() =>
-              void hmcl()
-                .fixBackgroundTransparency()
-                .then(() =>
-                  state.appendLog({ text: '已重新应用透明背景', isError: false })
-                )
-                .catch((error) =>
-                  state.appendLog({ text: `修复透明背景失败: ${String(error)}`, isError: true })
-                )
-            }
-          >
+        </SettingsRow>
+        <SettingsRow
+          title="透明背景"
+          subtitle="Linux 下需要桌面合成器支持"
+          check={transparent}
+          onCheckChange={(checked) => save({ launcherBackgroundTransparent: checked })}
+        />
+        <SettingsRow title="透明背景未生效" subtitle="重新应用一次透明背景设置">
+          <button className="border-button" disabled={!transparent} onClick={reapplyTransparency}>
             尝试修复
           </button>
-        </div>
-        <p className="notice-text">
-          Linux 下透明背景需要桌面合成器（Compositor）支持；Windows 若仍不生效请尝试「尝试修复」。
-        </p>
-      </div>
+        </SettingsRow>
+      </SettingsSection>
     </div>
   );
 }
@@ -6308,26 +6290,14 @@ function AppearanceSettingsTab({ state }: StateHookProps): React.JSX.Element {
 /** Download settings mirroring HMCL's DownloadSettingsPage. */
 function DownloadSettingsTab({ state }: StateHookProps): React.JSX.Element {
   const save = makeSettingsSave(state);
-  const [detectedJavas, setDetectedJavas] = useState<JavaRuntimeDto[]>([]);
-
-  const detectJava = async (): Promise<void> => {
-    const runtimes = await hmcl().detectJava();
-    setDetectedJavas(runtimes);
-  };
-
-  useEffect(() => {
-    detectJava();
-  }, []);
+  const autoThreads = state.settings.autoDownloadThreads !== false;
 
   return (
     <div className="settings-scroll">
       <SettingsTabHeader title="下载" subtitle="下载源、缓存目录与代理设置。" />
 
-      <div className="component-title">下载源</div>
-      <div className="card settings-card">
-        <div className="card-title">下载镜像</div>
-        <div className="field">
-          <span>版本列表源</span>
+      <SettingsSection title="下载源">
+        <SettingsRow title="版本列表源">
           <select
             value={state.settings.downloadMirror}
             onChange={(event) =>
@@ -6337,9 +6307,8 @@ function DownloadSettingsTab({ state }: StateHookProps): React.JSX.Element {
             <option value="bmclapi">BMCLAPI（国内推荐）</option>
             <option value="mojang">Mojang 官方源</option>
           </select>
-        </div>
-        <div className="field">
-          <span>文件下载源</span>
+        </SettingsRow>
+        <SettingsRow title="文件下载源">
           <select
             value={state.settings.fileDownloadSource ?? 'bmclapi'}
             onChange={(event) =>
@@ -6349,9 +6318,8 @@ function DownloadSettingsTab({ state }: StateHookProps): React.JSX.Element {
             <option value="bmclapi">BMCLAPI（国内推荐）</option>
             <option value="mojang">Mojang 官方源</option>
           </select>
-        </div>
-        <div className="field">
-          <span>默认附加组件源</span>
+        </SettingsRow>
+        <SettingsRow title="默认附加组件源" subtitle="安装模组、资源包与光影时的默认来源">
           <select
             value={state.settings.defaultAddonSource ?? 'modrinth'}
             onChange={(event) =>
@@ -6361,139 +6329,115 @@ function DownloadSettingsTab({ state }: StateHookProps): React.JSX.Element {
             <option value="modrinth">Modrinth</option>
             <option value="curseforge">CurseForge</option>
           </select>
-        </div>
-      </div>
+        </SettingsRow>
+      </SettingsSection>
 
-      <div className="component-title">缓存目录</div>
-      <div className="card settings-card">
-        <div className="card-title">缓存目录</div>
-        <div className="field field-row">
-          <span>缓存目录</span>
-          <code>{state.settings.commonDirectory ?? '默认'}</code>
-        </div>
-        <div className="field field-row">
-          <button className="text-button" onClick={async () => {
-            const path = await hmcl().pickThemeBackground(); // reuse
-            if (path) save({ commonDirectory: path });
-          }}>
-            选择目录…
-          </button>
-        </div>
-      </div>
-
-      <div className="component-title">下载线程</div>
-      <div className="card settings-card">
-        <div className="card-title">并发下载线程数</div>
-        <label className="field field-row">
-          <input
-            type="radio"
-            name="threads-mode"
-            checked={state.settings.autoDownloadThreads !== false}
-            onChange={(e) => save({ autoDownloadThreads: e.target.checked })}
-          />
-          <span>自动 (根据系统决定)</span>
-        </label>
-        <label className="field field-row">
-          <input
-            type="radio"
-            name="threads-mode"
-            checked={state.settings.autoDownloadThreads === false}
-            onChange={() => {}}
-          />
-          <span>自定义</span>
-        </label>
-        {state.settings.autoDownloadThreads === false && (
-          <div className="field field-row">
+      <SettingsSection title="下载线程">
+        <SettingsRow
+          title="自动"
+          subtitle="按系统核心数自动决定"
+          check={autoThreads}
+          onCheckChange={() => save({ autoDownloadThreads: true })}
+        />
+        <SettingsRow
+          title="自定义"
+          subtitle={`${state.settings.downloadThreads ?? 64} 个线程`}
+          check={!autoThreads}
+          onCheckChange={() => save({ autoDownloadThreads: false })}
+        >
+          {!autoThreads && (
             <input
               type="range"
               min={1}
               max={256}
               value={state.settings.downloadThreads ?? 64}
-              onChange={(e) => save({ downloadThreads: Number(e.target.value) })}
+              onChange={(event) => save({ downloadThreads: Number(event.target.value) })}
             />
-            <span className="slider-value">{state.settings.downloadThreads ?? 64}</span>
-          </div>
-        )}
-        <div className="field field-row">
-          <button className="text-button" onClick={async () => {
-            const path = await hmcl().pickThemeBackground(); // reuse
-            if (path) save({ commonDirectory: path });
-          }}>
-            清理缓存
-          </button>
-        </div>
-      </div>
+          )}
+        </SettingsRow>
+      </SettingsSection>
 
-      <div className="component-title">代理设置</div>
-      <div className="card settings-card">
-        <div className="card-title">代理服务器</div>
-        <label className="field field-row">
-          <input
-            type="checkbox"
-            checked={state.settings.useProxy ?? false}
-            onChange={(e) => save({ useProxy: e.target.checked })}
-          />
-          <span>使用代理</span>
-        </label>
-        {state.settings.useProxy && (
-          <div className="field field-row">
-            <span>地址</span>
-            <input
-              type="text"
-              value={state.settings.proxyHost ?? ''}
-              placeholder="127.0.0.1"
-              onChange={(e) => save({ proxyHost: e.target.value })}
+      <SettingsSection title="缓存目录">
+        <SettingsRow title="缓存目录" subtitle="存放下载的版本与库文件">
+          <code className="settings-row-value">
+            {state.settings.commonDirectory ?? state.settings.gameDir}
+          </code>
+        </SettingsRow>
+      </SettingsSection>
+
+      <SettingsSection title="代理">
+        <SettingsRow
+          title="使用代理"
+          check={state.settings.useProxy ?? false}
+          onCheckChange={(checked) => save({ useProxy: checked })}
+        />
+        {state.settings.useProxy === true && (
+          <>
+            <SettingsRow title="类型">
+              <select
+                value={state.settings.proxyType ?? 'http'}
+                onChange={(event) => save({ proxyType: event.target.value as SettingsDto['proxyType'] })}
+              >
+                <option value="http">HTTP</option>
+                <option value="socks5">SOCKS5</option>
+              </select>
+            </SettingsRow>
+            <SettingsRow title="地址">
+              <input
+                value={state.settings.proxyHost ?? ''}
+                placeholder="127.0.0.1"
+                onChange={(event) => save({ proxyHost: event.target.value })}
+              />
+              <span className="settings-row-separator">:</span>
+              <input
+                type="number"
+                className="settings-row-port"
+                value={state.settings.proxyPort ?? 7890}
+                min={1}
+                max={65535}
+                onChange={(event) => save({ proxyPort: Number(event.target.value) })}
+              />
+            </SettingsRow>
+            <SettingsRow
+              title="需要认证"
+              check={state.settings.proxyAuth ?? false}
+              onCheckChange={(checked) => save({ proxyAuth: checked })}
             />
-            <span>:</span>
-            <input
-              type="number"
-              value={state.settings.proxyPort ?? 7890}
-              min={1}
-              max={65535}
-              onChange={(e) => save({ proxyPort: Number(e.target.value) })}
-            />
-          </div>
+            {state.settings.proxyAuth === true && (
+              <>
+                <SettingsRow title="用户名">
+                  <input
+                    value={state.settings.proxyUsername ?? ''}
+                    onChange={(event) => save({ proxyUsername: event.target.value })}
+                  />
+                </SettingsRow>
+                <SettingsRow title="密码">
+                  <input
+                    type="password"
+                    value={state.settings.proxyPassword ?? ''}
+                    onChange={(event) => save({ proxyPassword: event.target.value })}
+                  />
+                </SettingsRow>
+              </>
+            )}
+          </>
         )}
-        <div className="field field-row">
-          <span>类型</span>
-          <select
-            value={state.settings.proxyType ?? 'http'}
-            onChange={(e) => save({ proxyType: e.target.value as SettingsDto['proxyType'] })}
-          >
-            <option value="http">HTTP</option>
-            <option value="socks5">SOCKS5</option>
-          </select>
-        </div>
-        <label className="field field-row">
-          <input
-            type="checkbox"
-            checked={state.settings.proxyAuth ?? false}
-            onChange={(e) => save({ proxyAuth: e.target.checked })}
-          />
-          <span>需要认证</span>
-        </label>
-        {state.settings.proxyAuth && (
-          <div className="field field-row">
-            <span>用户名</span>
-            <input
-              type="text"
-              value={state.settings.proxyUsername ?? ''}
-              onChange={(e) => save({ proxyUsername: e.target.value })}
-            />
-          </div>
-        )}
-        {state.settings.proxyAuth && (
-          <div className="field field-row">
-            <span>密码</span>
-            <input
-              type="password"
-              value={state.settings.proxyPassword ?? ''}
-              onChange={(e) => save({ proxyPassword: e.target.value })}
-            />
-          </div>
-        )}
-      </div>
+      </SettingsSection>
     </div>
+  );
+}
+
+/**
+ * A row of external links. HMCL's help, feedback and about pages are lists of
+ * buttons rather than settings, so they get the same row list with no controls.
+ */
+function LinkRow({ title, subtitle, href }: { title: string; subtitle: string; href: string }): React.JSX.Element {
+  return (
+    <SettingsRow title={title} subtitle={subtitle}>
+      <button className="border-button" onClick={() => void hmcl().openExternal(href)}>
+        打开
+      </button>
+    </SettingsRow>
   );
 }
 
@@ -6502,22 +6446,18 @@ function HelpSettingsTab(): React.JSX.Element {
   return (
     <div className="settings-scroll">
       <SettingsTabHeader title="帮助" subtitle="相关文档与资源。" />
-      <div className="component-title">文档</div>
-      <div className="card settings-card">
-        <div className="card-title">相关资源</div>
-        <button
-          className="text-button"
-          onClick={() => void hmcl().openExternal('https://hmcl.huangyuhui.net/help/')}
-        >
-          HMCL 官方文档
-        </button>
-        <button
-          className="text-button"
-          onClick={() => void hmcl().openExternal('https://github.com/HMCL-dev/HMCL')}
-        >
-          GitHub 项目主页
-        </button>
-      </div>
+      <SettingsSection title="相关资源">
+        <LinkRow
+          title="HMCL 官方文档"
+          subtitle="使用教程与常见问题"
+          href="https://hmcl.huangyuhui.net/help/"
+        />
+        <LinkRow
+          title="GitHub 项目主页"
+          subtitle="源代码与发布说明"
+          href="https://github.com/HMCL-dev/HMCL"
+        />
+      </SettingsSection>
     </div>
   );
 }
@@ -6527,19 +6467,16 @@ function FeedbackSettingsTab(): React.JSX.Element {
   return (
     <div className="settings-scroll">
       <SettingsTabHeader title="联系" subtitle="反馈与建议。" />
-      <div className="component-title">反馈</div>
-      <div className="card settings-card">
-        <div className="card-title">意见与建议</div>
-        <p className="notice-text">
+      <SettingsSection title="意见与建议">
+        <p className="settings-section-note">
           本重写版与上游 HMCL 共用同一个反馈渠道，欢迎前往 GitHub Issues 提交问题。
         </p>
-        <button
-          className="text-button"
-          onClick={() => void hmcl().openExternal('https://github.com/HMCL-dev/HMCL/issues')}
-        >
-          前往 GitHub Issues
-        </button>
-      </div>
+        <LinkRow
+          title="前往 GitHub Issues"
+          subtitle="报告问题或提出建议"
+          href="https://github.com/HMCL-dev/HMCL/issues"
+        />
+      </SettingsSection>
     </div>
   );
 }
@@ -6549,20 +6486,14 @@ function AboutSettingsTab(): React.JSX.Element {
   return (
     <div className="settings-scroll">
       <SettingsTabHeader title="关于" subtitle="版本信息与致谢。" />
-      <div className="component-title">启动器</div>
-      <div className="card settings-card">
-        <div className="card-title">HMCL Rewrite {REWRITE_VERSION}</div>
-        <p className="notice-text">
-          这是 Hello Minecraft! Launcher（HMCL）的 TypeScript / Electron 重写版，
-          界面与交互尽力对齐原版（GPL-3.0）。
-        </p>
-        <button
-          className="text-button"
-          onClick={() => void hmcl().openExternal(HMCL_RELEASES_URL)}
-        >
-          原版 HMCL 最新版本
-        </button>
-      </div>
+      <SettingsSection title="启动器">
+        <SettingsRow title={`HMCL Rewrite ${REWRITE_VERSION}`}>
+          <code className="settings-row-value">
+            TypeScript / Electron 重写版，界面与交互对齐原版 HMCL（GPL-3.0）
+          </code>
+        </SettingsRow>
+        <LinkRow title="原版 HMCL 最新版本" subtitle="查看上游发布的新版本" href={HMCL_RELEASES_URL} />
+      </SettingsSection>
     </div>
   );
 }
