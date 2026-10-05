@@ -558,6 +558,8 @@ export interface HmclApi {
   fixBackgroundTransparency(): Promise<void>;
   /** Appends the given log text to a timestamped file and reveals it in the file manager. */
   exportLogs(): Promise<string>;
+  /** Opens the folder exported logs are written to. */
+  openLogFolder(): Promise<void>;
   /**
    * Log window. Main owns the buffer so the window can be closed and reopened
    * without losing the session, exactly like HMCL's shared `CircularArrayList`.

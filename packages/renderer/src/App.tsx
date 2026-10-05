@@ -6164,8 +6164,10 @@ function GeneralSettingsTab({ state }: StateHookProps): React.JSX.Element {
   return (
     <div className="settings-scroll">
       <SettingsTabHeader title="通用" subtitle="更新、语言与调试。" />
-      <SettingsSection title="更新">
-        <SettingsRow title="更新频道" subtitle="开发版会一起收到尚未发布的构建">
+      {/* HMCL's section titles here are update / language / misc; its rows carry
+          the same labels, so the pair reads the same as it does there. */}
+      <SettingsSection title="启动器更新">
+        <SettingsRow title="启动器更新">
           <select
             value={state.settings.updateChannel ?? 'stable'}
             onChange={(event) =>
@@ -6178,7 +6180,7 @@ function GeneralSettingsTab({ state }: StateHookProps): React.JSX.Element {
         </SettingsRow>
       </SettingsSection>
       <SettingsSection title="语言">
-        <SettingsRow title="界面语言">
+        <SettingsRow title="语言" subtitle="重启后生效">
           <select
             value={state.settings.language ?? 'zh_cn'}
             onChange={(event) => save({ language: event.target.value })}
@@ -6197,19 +6199,20 @@ function GeneralSettingsTab({ state }: StateHookProps): React.JSX.Element {
         </SettingsRow>
       </SettingsSection>
       <SettingsSection title="杂项">
-        <SettingsRow title="愚人节彩蛋" check={state.settings.aprilFools ?? false} onCheckChange={(checked) => save({ aprilFools: checked })} />
-        <SettingsRow title="默认玩家名" subtitle="离线登录时使用的名字">
-          <input
-            value={state.settings.playerName ?? ''}
-            placeholder="Steve"
-            onChange={(event) => save({ playerName: event.target.value })}
-          />
-        </SettingsRow>
-      </SettingsSection>
-      <SettingsSection title="调试">
-        <SettingsRow title="导出当前会话日志" subtitle="写入带时间戳的日志文件">
+        {/* HMCL stores disable_april_fools, so its checkbox is the negation of
+            ours; the stored value keeps its existing meaning either way. */}
+        <SettingsRow
+          title="不启用愚人节功能"
+          subtitle="重启后生效"
+          check={state.settings.aprilFools === true ? false : true}
+          onCheckChange={(checked) => save({ aprilFools: checked ? undefined : true })}
+        />
+        <SettingsRow title="调试" subtitle="启动器日志位于用户数据目录的 logs 文件夹">
+          <button className="border-button" onClick={() => void hmcl().openLogFolder()}>
+            打开日志文件夹
+          </button>
           <button className="border-button" onClick={() => void state.exportLogs()}>
-            导出日志
+            导出启动器日志
           </button>
         </SettingsRow>
       </SettingsSection>

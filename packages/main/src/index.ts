@@ -531,15 +531,28 @@ handle('theme:fix-background-transparency', async () => {
   applyWindowTransparency();
 });
 
+/** Where exported launcher logs are written. */
+function launcherLogDir(): string {
+  return join(app.getPath('userData'), 'logs');
+}
+
 /** Writes the session log to userData/logs and reveals it in the file manager. */
 handle('logs:export', async () => {
-  const dir = join(app.getPath('userData'), 'logs');
+  const dir = launcherLogDir();
   await mkdir(dir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const target = join(dir, `launcher-${stamp}.log`);
   await writeFile(target, logWindow.snapshot().lines.map((line) => line.text).join('\n'), 'utf8');
   shell.showItemInFolder(target);
   return target;
+});
+
+/** Reveals the log folder, mirroring HMCL's 通用 → 杂项 → 调试 row. */
+handle('logs:open-folder', async () => {
+  const dir = launcherLogDir();
+  await mkdir(dir, { recursive: true });
+  const error = await shell.openPath(dir);
+  if (error !== '') throw new Error(error);
 });
 
 handle('logs:open-window', () => {

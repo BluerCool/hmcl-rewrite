@@ -70,6 +70,7 @@ const api: HmclApi = {
     ipcRenderer.invoke('theme:set-background-transparent', enabled),
   fixBackgroundTransparency: () => ipcRenderer.invoke('theme:fix-background-transparency'),
   exportLogs: () => ipcRenderer.invoke('logs:export'),
+  openLogFolder: () => ipcRenderer.invoke('logs:open-folder'),
   openLogWindow: () => ipcRenderer.invoke('logs:open-window'),
   getLogSnapshot: () => ipcRenderer.invoke('logs:snapshot'),
   appendLog: (line) => ipcRenderer.invoke('logs:append', line),
