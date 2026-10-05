@@ -194,6 +194,26 @@ export interface ModpackInspectDto {
   summary: string | undefined;
 }
 
+/** What the user fills in on the export page before an archive is written. */
+export interface ModpackExportInfoDto {
+  name: string;
+  version: string;
+  summary: string | undefined;
+}
+
+/** The defaults the export page opens with for one instance. */
+export type ModpackExportDefaultsDto = ModpackExportInfoDto;
+
+/** What an export ended up containing. */
+export interface ModpackExportResultDto {
+  /** Where the archive was written. */
+  path: string;
+  /** Number of files under `client-overrides/`. */
+  files: number;
+  /** Archive size in bytes. */
+  bytes: number;
+}
+
 /** A mod loader build available for one Minecraft version. */
 export interface LoaderVersionDto {
   /** Opaque selector passed back to installLoader. */
@@ -436,6 +456,16 @@ export interface HmclApi {
   installModpackFile(path: string, instanceName: string): Promise<string>;
   /** Downloads a Modrinth modpack version and installs it as a new instance. */
   installModrinthModpack(projectId: string, versionId: string, instanceName: string): Promise<string>;
+  /**
+   * The export page's starting values for an instance: its modpack name and
+   * version when it came from one, otherwise the instance id.
+   */
+  modpackExportDefaults(instanceId: string): Promise<ModpackExportDefaultsDto>;
+  /**
+   * Asks where to save, then writes the instance out as a Modrinth `.mrpack`.
+   * `undefined` when the user cancels the save dialog.
+   */
+  exportModpack(instanceId: string, info: ModpackExportInfoDto): Promise<ModpackExportResultDto | undefined>;
   detectJava(): Promise<JavaRuntimeDto[]>;
   /** Opens a file dialog to pick a java executable; undefined when cancelled. */
   pickJavaExecutable(): Promise<string | undefined>;

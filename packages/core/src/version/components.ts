@@ -136,6 +136,45 @@ function loadersOfLibrary(
 }
 
 /**
+ * The `inheritsFrom` chain from `id` up to the root vanilla version, in order.
+ *
+ * Ids already visited are skipped, so a manifest that points back at an
+ * ancestor cannot loop forever.
+ */
+export function versionChain(
+  id: string,
+  manifests: ReadonlyMap<string, GameVersionJson>
+): string[] {
+  const chain: string[] = [];
+  const seen = new Set<string>();
+  let current: string | undefined = id;
+  while (current !== undefined && current !== '' && !seen.has(current)) {
+    seen.add(current);
+    chain.push(current);
+    current = manifests.get(current)?.inheritsFrom;
+  }
+  return chain;
+}
+
+/** The chain's manifests, dropping ids that have none on disk. */
+export function chainManifests(
+  id: string,
+  manifests: ReadonlyMap<string, GameVersionJson>
+): GameVersionJson[] {
+  return versionChain(id, manifests)
+    .map((versionId) => manifests.get(versionId))
+    .filter((manifest): manifest is GameVersionJson => manifest !== undefined);
+}
+
+/** The root vanilla version an instance ends up running. */
+export function rootGameVersion(
+  id: string,
+  manifests: ReadonlyMap<string, GameVersionJson>
+): string {
+  return versionChain(id, manifests).at(-1) ?? id;
+}
+
+/**
  * Every loader the `inheritsFrom` chain runs, most specific first.
  *
  * `chain` is ordered from the instance itself up to the root vanilla version, the

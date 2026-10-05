@@ -18,12 +18,14 @@ import {
   MojangDownloadProvider,
   applyInstanceSettings,
   buildLaunchCommand,
+  chainManifests,
   cleanNativesDirectory,
   createOfflineProfile,
   detectJavaRuntimes,
   downloadAddonFile,
   enabledResourcePacks,
   encodeLaunchScript,
+  exportModrinthMrpack,
   extractNatives,
   fetchFabricLoaders,
   fetchForgeBuilds,
@@ -50,16 +52,17 @@ import {
   renderLaunchScript,
   resolveGameDir,
   resolveLoaderComponents,
+  rootGameVersion,
   scriptFlavour,
   searchModrinthProjects,
   setResourcePackEnabled,
+  suggestedExportInfo,
   suggestScriptName,
   supportsNewOptionsFormat,
   writeGameOptions,
   writeInstanceSettings,
   type AuthInfo,
   type DownloadProvider,
-  type GameVersionJson,
   type InstanceSettings,
   type LaunchOptions,
   type ModrinthCategory,
@@ -77,6 +80,7 @@ import type {
   InstanceFolderEntryDto,
   InstanceSettingsDto,
   LoaderKind,
+  ModpackExportInfoDto,
   ModpackInspectDto,
   ModrinthCategoryDto,
   ModrinthSearchIndex,
@@ -281,7 +285,7 @@ handle('versions:list', async () => {
   const manifests = new Map(versions.map((version) => [version.id, version.manifest]));
   return Promise.all(
     versions.map(async (version) => {
-      const gameVersion = resolveGameVersion(version.id, manifests);
+      const gameVersion = rootGameVersion(version.id, manifests);
       return {
         id: version.id,
         jar: version.manifest.jar ?? version.id,
@@ -294,43 +298,6 @@ handle('versions:list', async () => {
     })
   );
 });
-
-/** The `inheritsFrom` chain from `id` up to the root vanilla version, in order. */
-function inheritsChain(
-  id: string,
-  manifests: Map<string, GameVersionJson>
-): string[] {
-  const chain: string[] = [];
-  const seen = new Set<string>();
-  let current: string | undefined = id;
-  while (current !== undefined && current !== '' && !seen.has(current)) {
-    seen.add(current);
-    chain.push(current);
-    current = manifests.get(current)?.inheritsFrom;
-  }
-  return chain;
-}
-
-/**
- * The manifests of the `inheritsFrom` chain, from the instance itself up to the
- * root vanilla version.
- */
-function chainManifests(
-  id: string,
-  manifests: Map<string, GameVersionJson>
-): GameVersionJson[] {
-  return inheritsChain(id, manifests)
-    .map((versionId) => manifests.get(versionId))
-    .filter((manifest): manifest is GameVersionJson => manifest !== undefined);
-}
-
-/** Walks the `inheritsFrom` chain to the root vanilla version id. */
-function resolveGameVersion(
-  id: string,
-  manifests: Map<string, GameVersionJson>
-): string {
-  return inheritsChain(id, manifests).at(-1) ?? id;
-}
 
 handle('versions:remote', async () => {
   const provider = state.provider();
@@ -1063,6 +1030,75 @@ handle('modpack:install-modrinth', async (projectId: string, versionId: string, 
   }
 });
 
+handle('modpack:export-defaults', async (instanceId: string) => {
+  const repo = state.repository();
+  await assertInstanceExists(repo, instanceId);
+  const installed = (await repo.listInstalledVersions()).find((entry) => entry.id === instanceId);
+  return suggestedExportInfo(
+    installed?.manifest === undefined ? undefined : modpackSourceOf(installed.manifest),
+    instanceId
+  );
+});
+
+handle('modpack:export', async (instanceId: string, info: ModpackExportInfoDto) => {
+  const repo = state.repository();
+  await assertInstanceExists(repo, instanceId);
+
+  const name = String(info.name).trim();
+  const version = String(info.version).trim();
+  if (name === '') throw new Error('请填写整合包名称');
+  // HMCL puts a RequiredValidator on both fields (`ModpackInfoPage:220-221`).
+  if (version === '') throw new Error('请填写整合包版本');
+
+  const runDirectory = await resolveLaunchGameDir(repo, instanceId);
+  const saveOptions = {
+    title: '保存整合包',
+    defaultPath: join(runDirectory, `${sanitizeFileName(name)}.mrpack`),
+    filters: [{ name: '整合包', extensions: ['mrpack'] }]
+  };
+  const parent = win;
+  // The parent may already be gone if the user closed the window while the
+  // instance was being inspected; the dialog then opens parentless.
+  const result =
+    parent !== null && !parent.isDestroyed()
+      ? await dialog.showSaveDialog(parent, saveOptions)
+      : await dialog.showSaveDialog(saveOptions);
+  if (result.canceled || result.filePath === undefined || result.filePath === '') return undefined;
+
+  const exported = await exportModrinthMrpack(
+    repo,
+    instanceId,
+    runDirectory,
+    {
+      name,
+      version,
+      summary: blankToUndefined(info.summary)
+    },
+    result.filePath
+  );
+  return { path: result.filePath, files: exported.files, bytes: exported.bytes };
+});
+
+/**
+ * The `--gameDir` a launch of this instance would use: the launcher's own
+ * game directory, overlaid with whatever the instance settings say.
+ */
+async function resolveLaunchGameDir(repo: GameRepository, instanceId: string): Promise<string> {
+  const settings = await readInstanceSettings(repo, instanceId);
+  return settings.gameDirType === 'instance' ? repo.versionRoot(instanceId) : state.settings.gameDir;
+}
+
+function blankToUndefined(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed === undefined || trimmed === '' ? undefined : trimmed;
+}
+
+/** Strips the characters a file name cannot carry on any of the three hosts. */
+function sanitizeFileName(name: string): string {
+  const cleaned = name.replace(/[/\\:*?"<>|]/g, '_').trim();
+  return cleaned === '' ? 'modpack' : cleaned;
+}
+
 // ============ Accounts ============
 
 function toAccountDto(account: { id: string; kind: string; username: string; uuid?: string }): AccountDto {
@@ -1448,7 +1484,7 @@ handle(
     const manifests = new Map(
       (await repo.listInstalledVersions()).map((version) => [version.id, version.manifest])
     );
-    const gameVersion = resolveGameVersion(instanceId, manifests);
+    const gameVersion = rootGameVersion(instanceId, manifests);
     if (setResourcePackEnabled(options.entries, name, enabled, supportsNewOptionsFormat(gameVersion))) {
       await writeGameOptions(gameDir, options);
     }

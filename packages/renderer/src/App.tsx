@@ -1393,6 +1393,8 @@ function InstancesPage({
   const [refreshing, setRefreshing] = useState(false);
   /** Local modpack chosen from the toolbar, opened in the install wizard. */
   const [modpackPath, setModpackPath] = useState<string | undefined>(undefined);
+  /** Instance whose modpack is being exported, `undefined` when the page is shut. */
+  const [exportTarget, setExportTarget] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const timer = setTimeout(() => setFilter(searchText), 100);
@@ -1663,6 +1665,12 @@ function InstancesPage({
                       删除
                     </button>
                   </li>
+                  <li>
+                    <button onClick={() => { setMenuFor(undefined); setExportTarget(version.id); }}>
+                      <PackageIcon size={17} />
+                      导出整合包
+                    </button>
+                  </li>
                 </ul>
               )}
             </div>
@@ -1711,6 +1719,10 @@ function InstancesPage({
 
       {modpackPath !== undefined && (
         <ModpackInstallPage state={state} localPath={modpackPath} onClose={() => setModpackPath(undefined)} />
+      )}
+
+      {exportTarget !== undefined && (
+        <ModpackExportSheet state={state} instanceId={exportTarget} onClose={() => setExportTarget(undefined)} />
       )}
     </div>
   );
@@ -5396,6 +5408,142 @@ function LaunchFooter({
           </span>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Export page for 导出整合包, mirroring HMCL's `ModpackInfoPage`.
+ *
+ * HMCL runs a three-step wizard (type -> info -> file selection) covering four
+ * pack formats. Only the Modrinth `.mrpack` target is implemented, so the type
+ * step is gone and the file selection step is answered by the fixed default
+ * that `ModAdviser.MODPACK_SUGGESTED_BLACK_LIST` describes: worlds, client
+ * options and other per-machine state stay out of the archive.
+ */
+function ModpackExportSheet({
+  state,
+  instanceId,
+  onClose
+}: {
+  state: StateHook;
+  instanceId: string;
+  onClose: () => void;
+}): React.JSX.Element {
+  const [loaded, setLoaded] = useState(false);
+  const [name, setName] = useState(instanceId);
+  const [version, setVersion] = useState('1.0.0');
+  const [summary, setSummary] = useState('');
+  const [nameInvalid, setNameInvalid] = useState(false);
+  const [versionInvalid, setVersionInvalid] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  // An instance that came from a modpack opens on that pack's own name and
+  // version; a plain instance opens on its id. HMCL reads the same values off
+  // the instance (`ModpackInfoPage:212`).
+  useEffect(() => {
+    let disposed = false;
+    void hmcl()
+      .modpackExportDefaults(instanceId)
+      .then((value) => {
+        if (disposed) return;
+        setLoaded(true);
+        setName(value.name);
+        setVersion(value.version);
+        setSummary(value.summary ?? '');
+      })
+      .catch((reason: unknown) => {
+        if (!disposed) setError(String(reason));
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [instanceId]);
+
+  const submit = async (): Promise<void> => {
+    const trimmedName = name.trim();
+    const trimmedVersion = version.trim();
+    setNameInvalid(trimmedName === '');
+    setVersionInvalid(trimmedVersion === '');
+    if (trimmedName === '' || trimmedVersion === '') return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      // The main process shows the save dialog, so the name typed here only
+      // decides the suggested file name and the index inside the archive.
+      const exported = await hmcl().exportModpack(instanceId, {
+        name: trimmedName,
+        version: trimmedVersion,
+        summary: summary.trim() === '' ? undefined : summary.trim()
+      });
+      if (exported !== undefined) {
+        state.showToast(`整合包已导出：${exported.path}（${exported.files} 个文件）`);
+        onClose();
+      }
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const source = state.installed.find((entry) => entry.id === instanceId)?.modpack;
+
+  return (
+    <div className="sheet-backdrop" onClick={busy ? undefined : onClose}>
+      <div className="sheet modpack-export-sheet" onClick={(event) => event.stopPropagation()}>
+        <h3 className="sheet-title">导出整合包</h3>
+        <div className="sheet-body">
+          <div className="field">
+            <span>实例</span>
+            <code>{instanceId}</code>
+          </div>
+          <div className="field">
+            <span>格式</span>
+            <code>.mrpack</code>
+          </div>
+          {source !== undefined && (
+            <div className="field">
+              <span>来源</span>
+              <code>
+                {source.name} {source.version}
+              </code>
+            </div>
+          )}
+          <label className="field">
+            <span>名称</span>
+            <input value={name} onChange={(event) => setName(event.target.value)} />
+          </label>
+          {nameInvalid && <em className="field-error">请填写整合包名称</em>}
+          <label className="field">
+            <span>版本</span>
+            <input value={version} onChange={(event) => setVersion(event.target.value)} />
+          </label>
+          {versionInvalid && <em className="field-error">请填写整合包版本</em>}
+          <label className="field">
+            <span>简介</span>
+            <input
+              value={summary}
+              placeholder="选填，会写进 modrinth.index.json"
+              onChange={(event) => setSummary(event.target.value)}
+            />
+          </label>
+          <p className="notice-text">
+            存档、客户端设置、日志与启动器缓存不会写进整合包，这一点与 HMCL
+            的默认导出选择一致。游戏版本与加载器会记在 modrinth.index.json 里。
+          </p>
+          {error !== undefined && <div className="dialog-error">{error}</div>}
+        </div>
+        <div className="sheet-actions">
+          <button className="raised-button" onClick={() => void submit()} disabled={busy || !loaded}>
+            导出
+          </button>
+          <button className="text-button" onClick={onClose} disabled={busy}>
+            取消
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

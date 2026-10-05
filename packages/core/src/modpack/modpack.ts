@@ -29,6 +29,8 @@ export interface ModrinthIndex {
   game: string;
   versionId: string;
   name: string;
+  /** One-line description; optional, and the only free text HMCL exports. */
+  summary?: string;
   files: ModrinthIndexFile[];
   dependencies: { minecraft: string } & Partial<
     Record<'fabric-loader' | 'forge' | 'neoforge' | 'quilt-loader', string>

@@ -17,6 +17,7 @@ export * from './download/downloader.js';
 export * from './addon/modrinth.js';
 export * from './modpack/modpack.js';
 export * from './modpack/source.js';
+export * from './modpack/export.js';
 export * from './modpack/curseforge.js';
 export * from './game/repository.js';
 export * from './game/options.js';

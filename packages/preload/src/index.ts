@@ -26,6 +26,8 @@ const api: HmclApi = {
   installModpackFile: (path, instanceName) => ipcRenderer.invoke('modpack:install-file', path, instanceName),
   installModrinthModpack: (projectId, versionId, instanceName) =>
     ipcRenderer.invoke('modpack:install-modrinth', projectId, versionId, instanceName),
+  modpackExportDefaults: (instanceId) => ipcRenderer.invoke('modpack:export-defaults', instanceId),
+  exportModpack: (instanceId, info) => ipcRenderer.invoke('modpack:export', instanceId, info),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   launch: (versionId) => ipcRenderer.invoke('launch:start', versionId),
