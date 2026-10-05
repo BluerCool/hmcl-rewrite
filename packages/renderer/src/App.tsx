@@ -6095,7 +6095,7 @@ function GameSettingsTab({ state }: StateHookProps): React.JSX.Element {
   const save = makeSettingsSave(state);
   return (
     <div className="settings-scroll">
-      <SettingsTabHeader title="版本管理" subtitle="管理游戏版本、内存分配与游戏目录。" />
+      <SettingsTabHeader title="全局游戏设置" subtitle="非隔离实例共用的游戏设置。" />
       <SettingsSection title="基础">
         <SettingsRow title="最大内存（MiB）" subtitle="留给游戏的堆大小">
           <input
@@ -6163,7 +6163,7 @@ function GeneralSettingsTab({ state }: StateHookProps): React.JSX.Element {
   const save = makeSettingsSave(state);
   return (
     <div className="settings-scroll">
-      <SettingsTabHeader title="常规" subtitle="更新、杂项与调试选项。" />
+      <SettingsTabHeader title="通用" subtitle="更新、语言与调试。" />
       <SettingsSection title="更新">
         <SettingsRow title="更新频道" subtitle="开发版会一起收到尚未发布的构建">
           <select
@@ -6240,7 +6240,7 @@ function AppearanceSettingsTab({ state }: StateHookProps): React.JSX.Element {
 
   return (
     <div className="settings-scroll">
-      <SettingsTabHeader title="个性化" subtitle="定制启动器外观与主题。" />
+      <SettingsTabHeader title="外观" subtitle="主题色、背景与窗口透明。" />
       <SettingsSection title="主题">
         <SettingsRow title="主色调">
           <input
@@ -6466,7 +6466,7 @@ function HelpSettingsTab(): React.JSX.Element {
 function FeedbackSettingsTab(): React.JSX.Element {
   return (
     <div className="settings-scroll">
-      <SettingsTabHeader title="联系" subtitle="反馈与建议。" />
+      <SettingsTabHeader title="反馈" subtitle="反馈与建议。" />
       <SettingsSection title="意见与建议">
         <p className="settings-section-note">
           本重写版与上游 HMCL 共用同一个反馈渠道，欢迎前往 GitHub Issues 提交问题。
@@ -6502,19 +6502,25 @@ function AboutSettingsTab(): React.JSX.Element {
 function SettingsPage({ state }: StateHookProps): React.JSX.Element {
   const [tab, setTab] = useState<SettingsTab>('game');
 
-  const groups: { category: string; items: { id: SettingsTab; label: string; icon: React.JSX.Element }[] }[] = [
+  // The two groups HMCL leaves uncategorized come first, then 启动器 and 帮助 —
+  // LauncherSettingsPage calls startCategory() only before the third entry, so
+  // 全局游戏设置 and Java 管理 sit directly under the top of the drawer.
+  const groups: {
+    category: string | undefined;
+    items: { id: SettingsTab; label: string; icon: React.JSX.Element }[];
+  }[] = [
     {
-      category: '实例',
+      category: undefined,
       items: [
-        { id: 'game', label: '游戏设置', icon: <GamepadIcon size={20} /> },
+        { id: 'game', label: '全局游戏设置', icon: <GamepadIcon size={20} /> },
         { id: 'java', label: 'Java 管理', icon: <CoffeeIcon size={20} /> }
       ]
     },
     {
       category: '启动器',
       items: [
-        { id: 'general', label: '常规', icon: <SettingsIcon size={20} /> },
-        { id: 'appearance', label: '个性化', icon: <PaletteIcon size={20} /> },
+        { id: 'general', label: '通用', icon: <SettingsIcon size={20} /> },
+        { id: 'appearance', label: '外观', icon: <PaletteIcon size={20} /> },
         { id: 'download', label: '下载', icon: <DownloadIcon size={20} /> }
       ]
     },
@@ -6522,7 +6528,7 @@ function SettingsPage({ state }: StateHookProps): React.JSX.Element {
       category: '帮助',
       items: [
         { id: 'help', label: '帮助', icon: <WikiIcon size={20} /> },
-        { id: 'feedback', label: '联系', icon: <PublicIcon size={20} /> },
+        { id: 'feedback', label: '反馈', icon: <PublicIcon size={20} /> },
         { id: 'about', label: '关于', icon: <InfoIcon size={20} /> }
       ]
     }
@@ -6532,8 +6538,10 @@ function SettingsPage({ state }: StateHookProps): React.JSX.Element {
     <div className="settings-page">
       <aside className="dl-sidebar">
         {groups.map((group) => (
-          <div key={group.category}>
-            <div className="sidebar-category">{group.category}</div>
+          <div key={group.category ?? 'uncategorized'}>
+            {group.category !== undefined && (
+              <div className="sidebar-category">{group.category}</div>
+            )}
             {group.items.map((item) => (
               <button
                 key={item.id}
