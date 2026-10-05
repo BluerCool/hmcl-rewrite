@@ -35,6 +35,12 @@ export interface ModpackSourceDto {
   /** Declared Minecraft version, i.e. the base the pack was built on. */
   gameVersion: string | undefined;
   loader: { key: string; version: string } | undefined;
+  /**
+   * Modrinth project id or slug, present only when the pack was downloaded
+   * through this launcher. Local `.mrpack` imports and CurseForge zips name no
+   * project, so they have none and cannot be updated from the list.
+   */
+  projectId: string | undefined;
 }
 
 export interface InstalledVersionDto {
@@ -117,6 +123,18 @@ export type AddonSubdir = 'mods' | 'resourcepacks' | 'shaderpacks';
 
 /** Modrinth search indexes surfaced in the 排序 dropdown. */
 export type ModrinthSearchIndex = 'relevance' | 'newest' | 'updated' | 'downloads';
+
+/** The pack versions offered by the instance list's update button. */
+export interface ModpackVersionChoiceDto {
+  /** Modrinth project id or slug, reusable as `installModrinthModpack`. */
+  projectId: string;
+  /** Pack name, as the manifest spells it (not necessarily the project title). */
+  name: string;
+  /** Version this instance has installed, for labelling in the list. */
+  installedVersion: string;
+  /** Newest first, the installed version included. */
+  versions: ModrinthVersionDto[];
+}
 
 /** A paged slice of Modrinth search hits plus the total match count. */
 export interface ModrinthSearchResultDto {
@@ -455,6 +473,17 @@ export interface HmclApi {
   /** Installs a local .zip/.mrpack modpack into a new version-isolated instance. */
   installModpackFile(path: string, instanceName: string): Promise<string>;
   /** Downloads a Modrinth modpack version and installs it as a new instance. */
+  installModrinthModpack(
+    projectId: string,
+    versionId: string,
+    instanceName: string
+  ): Promise<string>;
+  /**
+   * The other versions of the pack an instance was installed from, newest
+   * first. Only defined for a modpack whose origin project is known, i.e. one
+   * this launcher downloaded from Modrinth.
+   */
+  modpackOtherVersions(instanceId: string): Promise<ModpackVersionChoiceDto | undefined>;
   installModrinthModpack(projectId: string, versionId: string, instanceName: string): Promise<string>;
   /**
    * The export page's starting values for an instance: its modpack name and

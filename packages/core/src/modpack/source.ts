@@ -7,6 +7,12 @@
  * `modpack.json` in the instance folder (`HMCLGameInstance#isModpack`); both
  * answer the same two questions the instance list asks — is this a modpack, and
  * which version of it is installed.
+ *
+ * Neither format names the project it came from — a Modrinth index carries no
+ * project id, and a CurseForge zip does not either — so the installer writes
+ * down what it knew at download time in `modpackOrigin` (`writeModpackVersionJson`).
+ * That is what makes "install another version of this pack" possible; without it
+ * a pack can only be re-fetched by hand.
  */
 import type { GameVersionJson } from '../version/types.js';
 
@@ -27,6 +33,12 @@ export interface ModpackSource {
   /** Declared Minecraft version, i.e. the base the pack was built on. */
   gameVersion: string | undefined;
   loader: ModpackLoaderSource | undefined;
+  /**
+   * Modrinth project id or slug, when the pack was downloaded rather than
+   * imported from a local file. Absent for local imports and for CurseForge,
+   * which exposes no project id.
+   */
+  projectId: string | undefined;
 }
 
 /** Modrinth dependency keys, in the order CurseForge names them. */
@@ -61,6 +73,7 @@ export function modpackSourceOf(manifest: GameVersionJson): ModpackSource | unde
   // loader list live one level down from the manifest root.
   const minecraft = isRecord(info.minecraft) ? info.minecraft : undefined;
 
+  const origin = manifest.modpackOrigin;
   return {
     format: dependencies === undefined ? 'curseforge' : 'modrinth',
     name: name ?? version,
@@ -69,7 +82,8 @@ export function modpackSourceOf(manifest: GameVersionJson): ModpackSource | unde
     gameVersion: str(dependencies?.minecraft) ?? str(minecraft?.version),
     loader: dependencies === undefined
       ? curseForgeLoader(minecraft?.modLoaders)
-      : modrinthLoader(dependencies)
+      : modrinthLoader(dependencies),
+    projectId: isRecord(origin) ? str(origin.projectId) : undefined
   };
 }
 

@@ -22,8 +22,37 @@ describe('modpackSourceOf', () => {
       version: '1.0.0',
       summary: 'A pvp modpack',
       gameVersion: '1.21.1',
-      loader: { key: 'fabric-loader', version: '0.16.3' }
+      loader: { key: 'fabric-loader', version: '0.16.3' },
+      projectId: undefined
     });
+  });
+
+  it('reads the origin project the installer recorded beside the manifest', () => {
+    const source = modpackSourceOf({
+      id: 'ukuspvpmodpack',
+      type: 'modpack',
+      modpackOrigin: { projectId: 'JR0bkFKa' },
+      modpackInfo: {
+        formatVersion: 1,
+        game: 'minecraft',
+        versionId: '1.5.7+mc1.21.1',
+        name: 'ukus-pvp-modpack',
+        files: [],
+        dependencies: { minecraft: '1.21.1' }
+      }
+    });
+    expect(source?.projectId).toBe('JR0bkFKa');
+    expect(source?.version).toBe('1.5.7+mc1.21.1');
+  });
+
+  it('reports no project for a pack imported from a local file', () => {
+    // The manifest alone can never name its project, so an instance installed
+    // from a local .mrpack is permanently un-updatable from the list.
+    const source = modpackSourceOf({
+      id: 'local',
+      modpackInfo: { versionId: '1.0', name: 'local', dependencies: { minecraft: '1.21' } }
+    });
+    expect(source?.projectId).toBeUndefined();
   });
 
   it('reads a CurseForge manifest, whose version field is named differently', () => {
@@ -46,7 +75,8 @@ describe('modpackSourceOf', () => {
       version: '2.1',
       summary: undefined,
       gameVersion: '1.20.1',
-      loader: { key: 'forge', version: '47.4.10' }
+      loader: { key: 'forge', version: '47.4.10' },
+      projectId: undefined
     });
   });
 

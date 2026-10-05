@@ -2,9 +2,11 @@ import { expect, it } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { zipSync } from 'fflate';
 import { GameRepository } from '../game/repository.js';
-import { extractOverrides, loaderFromModrinth, safeJoin } from './modpack.js';
+import type { DownloadProvider } from '../download/mirrors.js';
+import { extractOverrides, installModpackFile, loaderFromModrinth, safeJoin } from './modpack.js';
 
 it('loaderFromModrinth reads fabric-loader / quilt-loader dependency keys', () => {
   expect(
@@ -96,6 +98,111 @@ it('extractOverrides skips directory entries instead of writing to them', async 
     expect(await readFile(join(repo.versionRoot('Instance'), 'config/options.txt'), 'utf8')).toBe('foo=1');
     expect((await readFile(join(repo.versionRoot('Instance'), 'mods/example.jar'))).byteLength).toBe(3);
     expect(lines.join()).toContain('已解压');
+  } finally {
+    await rm(repo.rootDir, { recursive: true, force: true });
+  }
+});
+/** A provider that must never be reached: these tests download nothing. */
+const OFFLINE_PROVIDER = {
+  altUrls: () => [],
+  concurrency: 1
+} as unknown as DownloadProvider;
+
+/**
+ * Writes a Modrinth pack whose only dependency is an already-installed vanilla
+ * version, so installing it needs no network.
+ */
+async function writeOfflineMrpack(
+  repo: GameRepository,
+  index: Record<string, unknown>,
+  overrides: Record<string, string> = {}
+): Promise<string> {
+  const path = join(repo.rootDir, 'pack.mrpack');
+  const entries: Record<string, Uint8Array> = {
+    'modrinth.index.json': new TextEncoder().encode(JSON.stringify(index))
+  };
+  for (const [name, body] of Object.entries(overrides)) {
+    entries[`overrides/${name}`] = new TextEncoder().encode(body);
+  }
+  await writeFile(path, zipSync(entries));
+  return path;
+}
+
+it('installModpackFile records the origin project beside the manifest', async () => {
+  const repo = new GameRepository(mkdtempSync(join(tmpdir(), 'hmcl-modpack-')));
+  try {
+    await mkdir(repo.versionRoot('1.21.1'), { recursive: true });
+    await writeFile(repo.versionJson('1.21.1'), JSON.stringify({ id: '1.21.1', type: 'release' }));
+    const zip = await writeOfflineMrpack(
+      repo,
+      {
+        formatVersion: 1,
+        game: 'minecraft',
+        versionId: '3.0.0',
+        name: 'offline pack',
+        files: [],
+        dependencies: { minecraft: '1.21.1' }
+      },
+      { 'config/options.txt': 'foo=1' }
+    );
+
+    const created = await installModpackFile(repo, OFFLINE_PROVIDER, zip, 'packed', {
+      projectId: 'some-project'
+    });
+    expect(created).toBe('packed');
+
+    const versionJson = JSON.parse(await readFile(repo.versionJson('packed'), 'utf8'));
+    expect(versionJson.modpackOrigin).toEqual({ projectId: 'some-project' });
+    // The manifest is the pack's own document and must stay untouched.
+    expect(versionJson.modpackInfo.projectId).toBeUndefined();
+    expect(versionJson.modpackInfo.versionId).toBe('3.0.0');
+    expect(await readFile(join(repo.versionRoot('packed'), 'config/options.txt'), 'utf8')).toBe('foo=1');
+  } finally {
+    await rm(repo.rootDir, { recursive: true, force: true });
+  }
+});
+
+it('installModpackFile writes no origin when the pack came from a local file', async () => {
+  const repo = new GameRepository(mkdtempSync(join(tmpdir(), 'hmcl-modpack-')));
+  try {
+    await mkdir(repo.versionRoot('1.21.1'), { recursive: true });
+    await writeFile(repo.versionJson('1.21.1'), JSON.stringify({ id: '1.21.1', type: 'release' }));
+    const zip = await writeOfflineMrpack(repo, {
+      formatVersion: 1,
+      game: 'minecraft',
+      versionId: '3.0.0',
+      name: 'offline pack',
+      files: [],
+      dependencies: { minecraft: '1.21.1' }
+    });
+    await installModpackFile(repo, OFFLINE_PROVIDER, zip, 'packed');
+    const versionJson = JSON.parse(await readFile(repo.versionJson('packed'), 'utf8'));
+    expect(versionJson.modpackOrigin).toBeUndefined();
+  } finally {
+    await rm(repo.rootDir, { recursive: true, force: true });
+  }
+});
+
+it('installModpackFile removes the instance directory when the install fails', async () => {
+  const repo = new GameRepository(mkdtempSync(join(tmpdir(), 'hmcl-modpack-')));
+  try {
+    // No `dependencies.minecraft`, so the manifest is rejected after the instance
+    // directory already exists — exactly the shape of a mid-install failure.
+    const zip = await writeOfflineMrpack(repo, {
+      formatVersion: 1,
+      game: 'minecraft',
+      versionId: '3.0.0',
+      name: 'broken pack',
+      files: [],
+      dependencies: {}
+    });
+    await expect(installModpackFile(repo, OFFLINE_PROVIDER, zip, 'broken')).rejects.toThrow(
+      /没有声明 Minecraft 版本/
+    );
+    // The directory itself has to be gone: a leftover one shows up in the
+    // instance list as a broken pack. Checking version.json alone would pass
+    // either way, since a failed install never writes it.
+    await expect(stat(repo.versionRoot('broken'))).rejects.toThrow();
   } finally {
     await rm(repo.rootDir, { recursive: true, force: true });
   }

@@ -1027,6 +1027,10 @@ handle('modpack:install-modrinth', async (projectId: string, versionId: string, 
     try {
       installed = await installModpackFile(state.repository(), provider, target, String(instanceName), {
         java: await resolveJava(),
+        // Recorded so the instance list can offer this pack's other versions
+        // later. No modpack format states its own project, so this is the only
+        // moment the id is known.
+        projectId: String(projectId),
         onProgress: (p) => broadcast({ kind: 'download-progress', launchId, progress: p }),
         onLine: (line) => logWindow.publish(launchId, line, false)
       });
@@ -1039,6 +1043,25 @@ handle('modpack:install-modrinth', async (projectId: string, versionId: string, 
     broadcast({ kind: 'download-settled', launchId, ok: false, error: String(e) });
     throw e;
   }
+});
+
+handle('modpack:other-versions', async (instanceId: string) => {
+  const repo = state.repository();
+  await assertInstanceExists(repo, instanceId);
+  const installed = (await repo.listInstalledVersions()).find((entry) => entry.id === instanceId);
+  const source = installed?.manifest === undefined
+    ? undefined
+    : modpackSourceOf(installed.manifest);
+  // Only a pack this launcher downloaded names the project it came from, and
+  // only Modrinth asks for one at all. Anything else has nothing to ask.
+  if (source === undefined || source.projectId === undefined) return undefined;
+  const versions = await fetchModrinthVersions(source.projectId);
+  return {
+    projectId: source.projectId,
+    name: source.name,
+    installedVersion: source.version,
+    versions: versions.map((version) => toModrinthVersionDto(version))
+  };
 });
 
 handle('modpack:export-defaults', async (instanceId: string) => {

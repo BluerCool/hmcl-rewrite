@@ -248,7 +248,8 @@ describe('suggestedExportInfo', () => {
           version: '1.5.7',
           summary: 'pvp',
           gameVersion: '1.21.1',
-          loader: undefined
+          loader: undefined,
+          projectId: undefined
         },
         'ukuspvpmodpack'
       )

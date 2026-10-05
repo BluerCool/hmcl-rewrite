@@ -96,6 +96,19 @@ export interface GameVersionJson {
    * into the two formats here.
    */
   modpackInfo?: unknown;
+  /**
+   * Where the modpack was downloaded from, when the launcher was the one that
+   * fetched it. Kept beside `modpackInfo` rather than inside it: `modpackInfo`
+   * is the pack's own manifest kept verbatim, and a Modrinth index carries no
+   * project id (only its `versionId`, which is the human version *number*).
+   */
+  modpackOrigin?: ModpackOriginJson;
+}
+
+/** Download origin of a modpack install, absent for local `.mrpack` imports. */
+export interface ModpackOriginJson {
+  /** Modrinth project id or slug — the only id a modpack format exposes. */
+  projectId: string;
 }
 
 /** One entry of the remote version manifest. */

@@ -13,6 +13,7 @@ import type {
   MicrosoftDeviceCodeDto,
   ModpackInspectDto,
   ModrinthCategoryDto,
+  ModpackVersionChoiceDto,
   ModrinthProjectDto,
   ModrinthProjectType,
   ModrinthSearchIndex,
@@ -1395,6 +1396,7 @@ function InstancesPage({
   const [modpackPath, setModpackPath] = useState<string | undefined>(undefined);
   /** Instance whose modpack is being exported, `undefined` when the page is shut. */
   const [exportTarget, setExportTarget] = useState<string | undefined>(undefined);
+  const [updateFor, setUpdateFor] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const timer = setTimeout(() => setFilter(searchText), 100);
@@ -1603,6 +1605,20 @@ function InstancesPage({
               <div className="secondary">{instanceSubtitle(version)}</div>
             </div>
             <div className="instance-actions">
+              {/* HMCL shows this for every modpack (GameListCell.java:184-186,
+                  canUpdate = isModpack). It can only be offered where the origin
+                  project is known, i.e. packs this launcher downloaded. */}
+              {version.modpack?.projectId !== undefined && (
+                <button
+                  className="icon-button"
+                  title="更新整合包"
+                  aria-label="更新整合包"
+                  disabled={state.busy}
+                  onClick={(e) => { e.stopPropagation(); setUpdateFor(version.id); }}
+                >
+                  <UpdateIcon size={19} />
+                </button>
+              )}
               <button
                 className="icon-button"
                 title="测试游戏"
@@ -1743,6 +1759,9 @@ function InstancesPage({
 
       {exportTarget !== undefined && (
         <ModpackExportSheet state={state} instanceId={exportTarget} onClose={() => setExportTarget(undefined)} />
+      )}
+      {updateFor !== undefined && (
+        <ModpackVersionsPage state={state} instanceId={updateFor} onClose={() => setUpdateFor(undefined)} />
       )}
     </div>
   );
@@ -5075,19 +5094,32 @@ function ModpackInstallPage({
   project,
   version,
   localPath,
+  initialName,
+  origin,
   onClose
 }: {
   state: StateHook;
   project?: ModrinthProjectDto;
   version?: ModrinthVersionDto;
   localPath?: string;
+  /** Overrides the name derived from the pack, e.g. to include its version. */
+  initialName?: string;
+  /**
+   * Identifies the pack when there is no `ModrinthProjectDto` for it, which is
+   * the case when the install starts from an instance the launcher installed
+   * earlier: the manifest knows the pack's own name but not Modrinth's project
+   * page, so there is no project to show.
+   */
+  origin?: { slug: string; title: string; author: string; description: string };
   onClose?: () => void;
 }): React.JSX.Element {
   const defaultName = useMemo(() => {
+    if (initialName !== undefined) return initialName;
     if (project !== undefined) return sanitizeInstanceName(project.title);
+    if (origin !== undefined) return sanitizeInstanceName(origin.title);
     if (localPath !== undefined) return instanceNameFromPath(localPath);
     return '安装整合包';
-  }, [project, localPath]);
+  }, [initialName, project, origin, localPath]);
 
   const [name, setName] = useState(defaultName);
   const [invalid, setInvalid] = useState(false);
@@ -5121,11 +5153,11 @@ function ModpackInstallPage({
     return unsubscribe;
   }, []);
 
-  const packName = inspect?.name ?? project?.title ?? '未知整合包';
+  const packName = inspect?.name ?? project?.title ?? origin?.title ?? '未知整合包';
   const packVersion = inspect?.version ?? (version !== undefined ? version.versionNumber : '');
-  const packAuthor = inspect?.author ?? project?.author ?? '';
+  const packAuthor = inspect?.author ?? project?.author ?? origin?.author ?? '';
   const description =
-    localPath !== undefined ? (inspect?.summary ?? '') : (project?.description ?? '');
+    localPath !== undefined ? (inspect?.summary ?? '') : (project?.description ?? origin?.description ?? '');
 
   const startInstall = async (): Promise<void> => {
     if (!/^[0-9A-Za-z._-]+$/.test(name)) {
@@ -5139,8 +5171,8 @@ function ModpackInstallPage({
     setCanRetry(false);
     try {
       const created =
-        project !== undefined && version !== undefined
-          ? await hmcl().installModrinthModpack(project.slug, version.id, name)
+        version !== undefined
+          ? await hmcl().installModrinthModpack(project?.slug ?? origin!.slug, version.id, name)
           : await hmcl().installModpackFile(localPath!, name);
       await state.refreshInstalled();
       state.setCurrentId(created);
@@ -5292,6 +5324,165 @@ function ModpackInstallPage({
       </div>
     </div>
   );
+}
+
+/**
+ * Version chooser behind the instance list's update button.
+ *
+ * HMCL's `Instances.updateInstance` re-runs the install wizard on the *same*
+ * instance id, which replaces what is installed. This lists the pack's versions
+ * and installs the picked one as a *new* instance, so every version stays
+ * launchable and a bad update costs nothing to undo. Only packs this launcher
+ * downloaded from Modrinth can get here: no modpack format states its own
+ * project, so an instance imported from a local file has nothing to ask.
+ */
+function ModpackVersionsPage({
+  state,
+  instanceId,
+  onClose
+}: {
+  state: StateHook;
+  instanceId: string;
+  onClose: () => void;
+}): React.JSX.Element {
+  const [choice, setChoice] = useState<ModpackVersionChoiceDto | undefined>(undefined);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [picked, setPicked] = useState<ModrinthVersionDto | undefined>(undefined);
+  const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let live = true;
+    setChoice(undefined);
+    setError(undefined);
+    hmcl()
+      .modpackOtherVersions(instanceId)
+      .then((result) => {
+        if (!live) return;
+        if (result === undefined) {
+          setError('该整合包没有记录来源项目，无法列出其他版本。请从「下载」页面重新安装。');
+          return;
+        }
+        setChoice(result);
+        // Preselect the newest version that is not the installed one, which is
+        // the version the user came here for.
+        const installed = result.versions.find(
+          (entry) => entry.versionNumber === result.installedVersion
+        );
+        const firstOther = result.versions.find((entry) => entry.id !== installed?.id);
+        setSelectedId(firstOther?.id ?? result.versions[0]?.id);
+      })
+      .catch((e) => live && setError(String(e)));
+    return () => {
+      live = false;
+    };
+  }, [instanceId, attempt]);
+
+  if (picked !== undefined && choice !== undefined) {
+    return (
+      <ModpackInstallPage
+        state={state}
+        version={picked}
+        initialName={uniqueInstanceName(
+          `${sanitizeInstanceName(choice.name)}-${sanitizeInstanceName(picked.versionNumber)}`,
+          state.installed.map((entry) => entry.id)
+        )}
+        origin={{
+          slug: choice.projectId,
+          title: choice.name,
+          author: '',
+          description: ''
+        }}
+        onClose={onClose}
+      />
+    );
+  }
+
+  return (
+    <div className="install-page">
+      <div className="install-page-nav">
+        <button className="icon-button" title="返回" aria-label="返回" onClick={onClose}>
+          <ArrowBackIcon size={20} />
+        </button>
+        <span className="install-page-title">选择整合包版本</span>
+      </div>
+      <div className="install-page-body">
+        <div className="card install-week-card">
+          <div className="install-week-title">
+            {choice === undefined ? (error === undefined ? '正在读取版本…' : '无法读取版本') : choice.name}
+          </div>
+          {error !== undefined && (
+            <>
+              <div className="field-error install-error">{error}</div>
+              <div className="install-actions">
+                <button className="raised-button" onClick={() => setAttempt((n) => n + 1)}>
+                  重试
+                </button>
+              </div>
+            </>
+          )}
+          {choice !== undefined && (
+            <>
+              <div className="installer-row">
+                <span>已安装版本</span>
+                <span>{choice.installedVersion}</span>
+              </div>
+              <div className="installer-row description-row">
+                <span>选择一个版本装成新实例，旧的会保留</span>
+              </div>
+              <div className="version-choice-list">
+                {choice.versions.map((entry) => {
+                  const installed = entry.versionNumber === choice.installedVersion;
+                  return (
+                    <label key={entry.id} className="version-choice">
+                      <input
+                        type="radio"
+                        name="modpack-version"
+                        checked={selectedId === entry.id}
+                        onChange={() => setSelectedId(entry.id)}
+                      />
+                      <span className="version-choice-main">
+                        <span className="version-choice-number">{entry.versionNumber}</span>
+                        {installed && <span className="tag">已安装</span>}
+                      </span>
+                      <span className="version-choice-meta">
+                        {entry.gameVersions.join(', ')}
+                        {entry.datePublished !== undefined && ` · ${entry.datePublished.slice(0, 10)}`}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="install-actions">
+                <button
+                  className="raised-button"
+                  disabled={selectedId === undefined}
+                  onClick={() =>
+                    setPicked(choice.versions.find((entry) => entry.id === selectedId))
+                  }
+                >
+                  安装此版本
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Appends a counter until the name is free. The install page already explains a
+ * taken name, but two versions of one pack default to the same base and a
+ * suffix is friendlier than an error.
+ */
+function uniqueInstanceName(base: string, taken: readonly string[]): string {
+  if (!taken.includes(base)) return base;
+  for (let n = 2; ; n++) {
+    const candidate = `${base}-${n}`;
+    if (!taken.includes(candidate)) return candidate;
+  }
 }
 
 /**

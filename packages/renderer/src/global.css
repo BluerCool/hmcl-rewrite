@@ -2722,6 +2722,56 @@ html.transparent-bg .launcher-bg::after {
   padding: 24px;
 }
 
+.version-choice-list {
+  display: flex;
+  flex-direction: column;
+  margin: 4px 0 12px;
+  border-top: 1px solid var(--monet-surface-container);
+}
+
+.version-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 4px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--monet-surface-container);
+}
+
+.version-choice:hover {
+  background: var(--monet-surface-container-low);
+}
+
+.version-choice input[type='radio'] {
+  accent-color: var(--monet-primary);
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 16px;
+}
+
+.version-choice-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.version-choice-number {
+  font-weight: 600;
+  color: var(--monet-on-surface);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.version-choice-meta {
+  color: var(--monet-on-surface-variant);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .install-week-title {
   font-size: 17px;
   font-weight: 600;

@@ -10,7 +10,7 @@
  * Modpack installs always enable version isolation so saves/configs/mods stay
  * inside the instance root (matching HMCL's behavior for new instances).
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, normalize, sep } from 'node:path';
 import { unzipSync } from 'fflate';
 import { type DownloadEntry, type DownloadProgress, Downloader } from '../download/downloader.js';
@@ -69,6 +69,12 @@ export interface ModpackLoaderSpec {
 export interface ModpackInstallOptions {
   /** Java executable required by Forge/NeoForge installers. */
   readonly java?: string | undefined;
+  /**
+   * Modrinth project id or slug, recorded in the instance so the list can offer
+   * to install another version of the same pack later. Omitted for local files
+   * and CurseForge, which name no project.
+   */
+  readonly projectId?: string | undefined;
   readonly onProgress?: ((progress: DownloadProgress) => void) | undefined;
   readonly onLine?: ((line: string) => void) | undefined;
 }
@@ -108,16 +114,26 @@ export async function installModpackFile(
   const instanceRoot = repo.versionRoot(instanceName);
   await mkdir(instanceRoot, { recursive: true });
 
-  if (indexJson !== undefined) {
-    const loaderVersion = await installModrinthMrpack(
-      repo, provider, instanceName, parseModrinthIndex(indexJson), entries, options
-    );
-    await writeModpackVersionJson(repo, instanceName, loaderVersion, indexJson);
-  } else {
-    const loaderVersion = await installCurseForgeZip(
-      repo, provider, instanceName, parseCurseManifest(manifestJson!), entries, options
-    );
-    await writeModpackVersionJson(repo, instanceName, loaderVersion, undefined, manifestJson);
+  // A half-written instance directory is worse than no instance: it shows up in
+  // the list, and its missing mods look like the pack's fault. HMCL also removes
+  // the instance on failure (`ModrinthInstallTask.java:100-104`), except for a
+  // `ModpackCompletionException` that is not caused by a missing file, which it
+  // keeps as a tolerable partial install.
+  try {
+    if (indexJson !== undefined) {
+      const loaderVersion = await installModrinthMrpack(
+        repo, provider, instanceName, parseModrinthIndex(indexJson), entries, options
+      );
+      await writeModpackVersionJson(repo, instanceName, loaderVersion, indexJson, undefined, options.projectId);
+    } else {
+      const loaderVersion = await installCurseForgeZip(
+        repo, provider, instanceName, parseCurseManifest(manifestJson!), entries, options
+      );
+      await writeModpackVersionJson(repo, instanceName, loaderVersion, undefined, manifestJson, options.projectId);
+    }
+  } catch (e) {
+    await rm(instanceRoot, { recursive: true, force: true }).catch(() => undefined);
+    throw e;
   }
 
   // Modpack instances always opt into version isolation.
@@ -235,13 +251,21 @@ async function installCurseForgeZip(
   return loaderVersion;
 }
 
-/** Writes the version.json for a modpack instance, inheriting from the loader version. */
+/**
+ * Writes the version.json for a modpack instance, inheriting from the loader
+ * version.
+ *
+ * `projectId` is recorded beside the manifest, never inside it: the manifest is
+ * the pack's own document, and neither format states which project it is from.
+ * Losing it means the instance can never be updated from the list again.
+ */
 async function writeModpackVersionJson(
   repo: GameRepository,
   instanceName: string,
   loaderVersion: string,
   indexJson?: Uint8Array,
-  manifestJson?: Uint8Array
+  manifestJson?: Uint8Array,
+  projectId?: string
 ): Promise<void> {
   const inheritsFrom = loaderVersion;
   const versionJson = {
@@ -252,7 +276,8 @@ async function writeModpackVersionJson(
       ? JSON.parse(new TextDecoder().decode(indexJson))
       : manifestJson !== undefined
         ? JSON.parse(new TextDecoder().decode(manifestJson))
-        : undefined
+        : undefined,
+    ...(projectId === undefined ? {} : { modpackOrigin: { projectId } })
   };
   await writeFile(repo.versionJson(instanceName), JSON.stringify(versionJson, null, 2), 'utf8');
 }
