@@ -749,11 +749,23 @@ handle('launch:save-script', async (versionId: string): Promise<string | undefin
   return result.filePath;
 });
 
-/** The extensions the host can run, as save-dialog filters. */
+/**
+ * The save-dialog filters for a launch script.
+ *
+ * HMCL lists one filter per extension, and only offers `.command` on macOS
+ * (`Instances.generateLaunchScript:290-300`). `.bash` is accepted when saving
+ * but never offered, so it is absent here too.
+ */
 function scriptFilters(): Array<{ name: string; extensions: string[] }> {
-  const extensions =
-    CURRENT_OS === 'windows' ? ['bat', 'ps1'] : ['sh', 'bash', 'command', 'ps1'];
-  return [{ name: '启动脚本', extensions }];
+  const filters: Array<{ name: string; extensions: string[] }> = [];
+  if (CURRENT_OS === 'macos') filters.push({ name: 'macOS Shell 脚本', extensions: ['command'] });
+  filters.push(
+    CURRENT_OS === 'windows'
+      ? { name: 'Windows 脚本', extensions: ['bat'] }
+      : { name: 'Bash 脚本', extensions: ['sh'] }
+  );
+  filters.push({ name: 'PowerShell 脚本', extensions: ['ps1'] });
+  return filters;
 }
 
 /**
