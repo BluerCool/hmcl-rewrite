@@ -21,6 +21,7 @@ import {
   chainManifests,
   cleanNativesDirectory,
   createOfflineProfile,
+  deriveInstanceIcon,
   detectJavaRuntimes,
   downloadAddonFile,
   enabledResourcePacks,
@@ -41,6 +42,7 @@ import {
   installOptiFineVersion,
   installVanillaVersion,
   modpackSourceOf,
+  parseInstanceIconType,
   optiFineLoaderId,
   packCompatibilityNote,
   parseOptiFineLoaderId,
@@ -285,14 +287,28 @@ handle('versions:list', async () => {
   return Promise.all(
     versions.map(async (version) => {
       const gameVersion = rootGameVersion(version.id, manifests);
+      const loaders = resolveLoaderComponents(chainManifests(version.id, manifests), gameVersion);
+      const settings = await readInstanceSettings(repo, version.id);
+      const customIcon = (await instanceIconPath(repo, version.id)) !== undefined;
       return {
         id: version.id,
         jar: version.manifest.jar ?? version.id,
         type: version.manifest.type,
         gameVersion,
-        loaders: resolveLoaderComponents(chainManifests(version.id, manifests), gameVersion),
-        isolated: (await readInstanceSettings(repo, version.id)).gameDirType === 'instance',
-        modpack: modpackSourceOf(version.manifest) ?? undefined
+        loaders,
+        isolated: settings.gameDirType === 'instance',
+        modpack: modpackSourceOf(version.manifest) ?? undefined,
+        icon: deriveInstanceIcon({
+          setting: settings.icon,
+          hasIconFile: customIcon,
+          loaders: loaders.map((loader) => loader.slug),
+          // HMCL asks its component analyser whether OptiFine is there. Nothing
+          // indexes the components here, and every OptiFine instance HMCL builds
+          // is named after its OptiFine jar, so the id carries the answer.
+          hasOptiFine: /optifine/i.test(version.id),
+          gameVersion
+        }),
+        customIcon
       };
     })
   );
@@ -1569,9 +1585,7 @@ const INSTANCE_ICON_NAMES = ['icon.png', 'icon.jpg', 'icon.jpeg', 'icon.gif', 'i
 
 async function instanceIconPath(repo: GameRepository, instanceId: string): Promise<string | undefined> {
   const root = repo.versionRoot(instanceId);
-  const names = [await readInstanceSettings(repo, instanceId).then((s) => s.icon), ...INSTANCE_ICON_NAMES];
-  for (const name of names) {
-    if (name === undefined || name === '') continue;
+  for (const name of INSTANCE_ICON_NAMES) {
     const path = join(root, name);
     try {
       await readFile(path);
@@ -1607,13 +1621,40 @@ handle('instance:icon-pick', async (instanceId: string): Promise<string | undefi
   if (picked.canceled || picked.filePaths.length === 0) return undefined;
   const source = picked.filePaths[0]!;
   const ext = extname(source).toLowerCase() || '.png';
+  // HMCL's `setIconFile` drops every existing icon file before copying, so a
+  // leftover `icon.jpg` cannot keep winning over the new `icon.png`.
+  for (const stale of INSTANCE_ICON_NAMES) {
+    await rm(join(repo.versionRoot(instanceId), stale), { force: true });
+  }
   const iconName = `icon${ext}`;
   await mkdir(repo.versionRoot(instanceId), { recursive: true });
   await cp(source, join(repo.versionRoot(instanceId), iconName));
-  const current = await readInstanceSettings(repo, instanceId);
-  await writeInstanceSettings(repo, instanceId, { ...current, icon: iconName });
+  // A custom image outranks a picked icon type, so the type has to go — the same
+  // reset to DEFAULT that `GameInstanceIconDialog.exploreIcon` does.
+  await clearInstanceIconType(repo, instanceId);
   return readInstanceIconDataUrl(instanceId);
 });
+
+handle('instance:icon-type-set', async (instanceId: string, iconType: string): Promise<void> => {
+  const repo = state.repository();
+  await assertInstanceExists(repo, instanceId);
+  const current = await readInstanceSettings(repo, instanceId);
+  const next = { ...current };
+  delete next.icon;
+  // An empty id means "derive it", which is HMCL's DEFAULT. Anything else has
+  // to name a real icon, or the settings file would carry a dead value.
+  if (parseInstanceIconType(iconType) !== undefined) next.icon = iconType;
+  await writeInstanceSettings(repo, instanceId, next);
+});
+
+/** Drops the picked icon type, leaving the icon to be derived again. */
+async function clearInstanceIconType(repo: GameRepository, instanceId: string): Promise<void> {
+  const current = await readInstanceSettings(repo, instanceId);
+  if (current.icon === undefined) return;
+  const next = { ...current };
+  delete next.icon;
+  await writeInstanceSettings(repo, instanceId, next);
+}
 
 handle('instance:icon-clear', async (instanceId: string): Promise<void> => {
   const repo = state.repository();
@@ -1622,10 +1663,9 @@ handle('instance:icon-clear', async (instanceId: string): Promise<void> => {
   if (path !== undefined) {
     await rm(path, { force: true });
   }
-  const current = await readInstanceSettings(repo, instanceId);
-  const next = { ...current };
-  delete next.icon;
-  await writeInstanceSettings(repo, instanceId, next);
+  // HMCL's `onDeleteIcon` resets the setting to DEFAULT as well, so clearing
+  // the file also gives up a picked icon type.
+  await clearInstanceIconType(repo, instanceId);
 });
 
 // ============ Window controls ============

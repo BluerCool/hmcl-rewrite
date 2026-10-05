@@ -59,6 +59,8 @@ const api: HmclApi = {
   readInstanceIcon: (instanceId) => ipcRenderer.invoke('instance:icon-read', instanceId),
   pickInstanceIcon: (instanceId) => ipcRenderer.invoke('instance:icon-pick', instanceId),
   clearInstanceIcon: (instanceId) => ipcRenderer.invoke('instance:icon-clear', instanceId),
+  setInstanceIconType: (instanceId, iconType) =>
+    ipcRenderer.invoke('instance:icon-type-set', instanceId, iconType),
   deleteRemoteAssets: (instanceId) => ipcRenderer.invoke('instance:clear-assets', instanceId),
   clearLibraries: () => ipcRenderer.invoke('instance:clear-libraries'),
   cleanInstance: (instanceId) => ipcRenderer.invoke('instance:clean', instanceId),

@@ -65,6 +65,16 @@ export interface InstalledVersionDto {
    * were not installed from one. Drives the list's tag and its update button.
    */
   modpack: ModpackSourceDto | undefined;
+  /**
+   * The built-in icon id the list should draw (e.g. `FABRIC`), derived the way
+   * HMCL's `computeIconImage` does. Always defined: grass is the last resort.
+   */
+  icon: string;
+  /**
+   * Whether an `icon.<ext>` file sits in the instance root, in which case it
+   * outranks {@link icon} and the list fetches it with `readInstanceIcon`.
+   */
+  customIcon: boolean;
 }
 
 /** A remote version from the manifest. */
@@ -327,6 +337,10 @@ export interface InstanceSettingsDto {
   processPriority?: 'high' | 'above_normal' | 'normal' | 'below_normal' | 'low';
   wrapper?: string;
   noOptimizingJVMArgs?: boolean;
+  /**
+   * The built-in icon the user picked, e.g. `CHEST`. Absent means the icon is
+   * derived from the instance (its loader, OptiFine, or game version).
+   */
   icon?: string;
   windowType?: 'windowed' | 'maximized' | 'fullscreen';
   quickPlay?: 'none' | 'multiplayer' | 'singleplayer' | 'realms';
@@ -434,6 +448,12 @@ export interface HmclApi {
   pickInstanceIcon(instanceId: string): Promise<string | undefined>;
   /** Removes the instance icon. */
   clearInstanceIcon(instanceId: string): Promise<void>;
+  /**
+   * Picks one of the built-in icons, or `''` to derive the icon from the
+   * instance again. A custom image file, when present, keeps winning until
+   * `clearInstanceIcon` removes it.
+   */
+  setInstanceIconType(instanceId: string, iconType: string): Promise<void>;
   /** Deletes all game assets for an instance (assets + resources folders). */
   deleteRemoteAssets(instanceId: string): Promise<void>;
   /** Deletes the shared libraries folder. */

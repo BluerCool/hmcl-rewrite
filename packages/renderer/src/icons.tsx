@@ -498,6 +498,16 @@ export function MenuIcon(props: IconProps): React.JSX.Element {
   );
 }
 
+/** Material's ADD_CIRCLE, the glyph HMCL's SVG.ADD_CIRCLE puts on the custom-icon tile. */
+export function AddIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg
+      {...props}
+      path="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"
+    />
+  );
+}
+
 /** HMCL SVG.KEEP — the log window's always-on-top toggle. */
 export function PushPinIcon(props: IconProps): React.JSX.Element {
   return (

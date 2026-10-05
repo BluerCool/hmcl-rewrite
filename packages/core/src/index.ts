@@ -16,6 +16,7 @@ export * from './download/mirrors.js';
 export * from './download/downloader.js';
 export * from './addon/modrinth.js';
 export * from './modpack/modpack.js';
+export * from './game/icon.js';
 export * from './modpack/source.js';
 export * from './modpack/export.js';
 export * from './modpack/curseforge.js';

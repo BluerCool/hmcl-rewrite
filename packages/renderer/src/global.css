@@ -1964,6 +1964,15 @@ body {
   flex-shrink: 0;
 }
 
+/* HMCL draws the instance icon in an ImageContainer of 32px
+   (GameListCell.java:90), scaled to fit and never cropped. */
+.instance-icon-image {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  image-rendering: auto;
+}
+
 /* Management dropdown, mirroring GameListCell's MORE_VERT popup. */
 .instance-menu {
   position: absolute;
@@ -3289,6 +3298,51 @@ html.transparent-bg .launcher-bg::after {
 
 .instance-icon-control {
   justify-content: flex-end;
+}
+
+/* The icon chooser is a FlowPane of 36px tiles in GameInstanceIconDialog, so it
+   wraps and stays tile-sized rather than stretching its images. */
+.icon-picker-sheet {
+  max-width: 420px;
+}
+
+.icon-picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.icon-picker-tile {
+  width: 36px;
+  height: 36px;
+  padding: 2px;
+  display: grid;
+  place-items: center;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: var(--monet-surface-container-high);
+  cursor: pointer;
+}
+
+.icon-picker-tile img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  image-rendering: auto;
+}
+
+.icon-picker-tile:hover {
+  background: var(--monet-surface-container-highest);
+}
+
+/* The current choice is marked, since HMCL's dialog closes on click and gives
+   no other feedback about what is already in effect. */
+.icon-picker-tile.selected {
+  border-color: var(--monet-primary);
+}
+
+.icon-picker-tile.custom {
+  color: var(--monet-primary);
 }
 
 .instance-icon-preview {

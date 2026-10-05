@@ -44,7 +44,17 @@ export interface InstanceSettings {
   wrapper?: string;
   /** When true, skip HMCL-generated optimizing JVM arguments. */
   noOptimizingJVMArgs?: boolean;
-  /** Instance icon file name inside the version root (e.g. `icon.png`). */
+  /**
+   * The built-in icon the user picked in the settings page, e.g. `CHEST` — one
+   * of `INSTANCE_ICON_TYPES`' ids, written the same way HMCL writes its
+   * `GameInstanceIconType` enum name so the two settings files stay
+   * comparable. Absent means \"derive the icon from the instance\".
+   *
+   * A custom image is not recorded here: it lives as `icon.<ext>` in the
+   * version root and is found by name, exactly as HMCL's `getIconFile` does.
+   * (Older builds of this launcher stored the file *name* here; such a value
+   * names no icon type and is ignored, with the file still found by name.)
+   */
   icon?: string;
   /** Window state at launch, mirroring HMCL's WindowType. */
   windowType?: 'windowed' | 'maximized' | 'fullscreen';

@@ -23,6 +23,7 @@ import type {
   SettingsDto
 } from '@hmcl/shared';
 import {
+  AddIcon,
   ArrowForwardIcon,
   ArrowUpIcon,
   BugIcon,
@@ -1370,6 +1371,65 @@ function matchesInstanceSearch(id: string, text: string): boolean {
   return id.toLowerCase().includes(text.toLowerCase());
 }
 
+/**
+ * Custom instance icons, keyed by instance id.
+ *
+ * An `icon.<ext>` file has to be read from disk and turned into a data URL, and
+ * the list draws every instance at once, so the answers live here rather than in
+ * each card's state. `null` remembers an instance that has no such file, which
+ * is the common case and must not be asked for twice.
+ */
+const customIconCache = new Map<string, string | null>();
+
+/** Forgets an instance's cached icon after the icon was changed. */
+function forgetInstanceIcon(instanceId: string): void {
+  customIconCache.delete(instanceId);
+}
+
+function useCustomInstanceIcon(instanceId: string, wanted: boolean): string | undefined {
+  const [data, setData] = useState<string | undefined>(() =>
+    wanted ? (customIconCache.get(instanceId) ?? undefined) : undefined
+  );
+  useEffect(() => {
+    if (!wanted) {
+      setData(undefined);
+      return;
+    }
+    const cached = customIconCache.get(instanceId);
+    if (cached !== undefined) {
+      setData(cached ?? undefined);
+      return;
+    }
+    let live = true;
+    void hmcl().readInstanceIcon(instanceId).then((url) => {
+      customIconCache.set(instanceId, url ?? null);
+      if (live) setData(url);
+    });
+    return () => {
+      live = false;
+    };
+  }, [instanceId, wanted]);
+  return data;
+}
+
+/**
+ * The 32px icon on an instance card.
+ *
+ * HMCL binds it to `gameInstance.getIconImage()`, and that resolution — a picked
+ * icon, then a custom image file, then the mod loader, then OptiFine, then the
+ * shape of the game version — already happened in the main process. Only a
+ * custom file still has to be read here: the list cannot inline a data URL into
+ * every entry, so the card asks for one when `customIcon` says there is a file.
+ */
+function InstanceIconCell({ version }: { version: InstalledVersionDto }): React.JSX.Element {
+  const custom = useCustomInstanceIcon(version.id, version.customIcon);
+  return (
+    <span className="instance-icon">
+      <img className="instance-icon-image" src={custom ?? instanceIconAsset(version.icon)} alt="" />
+    </span>
+  );
+}
+
 function InstancesPage({
   state,
   onShowDownloads
@@ -1590,9 +1650,7 @@ function InstancesPage({
             >
               {version.id === state.currentId && <span />}
             </button>
-            <span className="instance-icon">
-              <GameIcon size={32} />
-            </span>
+            <InstanceIconCell version={version} />
             <div className="instance-info">
               <div className="primary">
                 <span className="instance-id">{version.id}</span>
@@ -1768,13 +1826,27 @@ function InstancesPage({
 }
 
 function InstanceSettingsPanel({
-  instanceId
+  instanceId,
+  derivedIcon,
+  onIconChanged
 }: {
   instanceId: string;
+  /**
+   * The icon the list would draw for this instance right now, so the preview
+   * shows what the instance actually looks like before anything is picked.
+   */
+  derivedIcon: string | undefined;
+  /**
+   * Reloads the instance list. The card icon is derived in the main process, so
+   * the list has to ask for it again — HMCL instead invalidates
+   * `iconImageProperty` and every cell redraws on its own.
+   */
+  onIconChanged: () => Promise<void>;
 }): React.JSX.Element {
   const [settings, setSettings] = useState<InstanceSettingsDto | undefined>(undefined);
   const [systemMemory, setSystemMemory] = useState<number | undefined>(undefined);
   const [iconData, setIconData] = useState<string | undefined>(undefined);
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [quickMode, setQuickMode] = useState<'none' | 'multiplayer' | 'singleplayer' | 'realms'>('none');
 
   useEffect(() => {
@@ -1824,6 +1896,29 @@ function InstanceSettingsPanel({
 
   const clearJava = (): void => clearSetting('javaExecutable');
 
+  /** Records a built-in icon and closes the picker, as `GameInstanceIconDialog` does. */
+  const chooseIconType = (iconType: string): void => {
+    forgetInstanceIcon(instanceId);
+    setIconPickerOpen(false);
+    void (async () => {
+      await hmcl().setInstanceIconType(instanceId, iconType);
+      save({ icon: iconType });
+      // Only now that the icon is on disk does the list have a new icon to read.
+      await onIconChanged();
+    })();
+  };
+
+  /** Copies a chosen image in as the icon, which outranks any built-in icon. */
+  const chooseIconFile = (): void => {
+    forgetInstanceIcon(instanceId);
+    void hmcl().pickInstanceIcon(instanceId).then(async (data) => {
+      setIconData(data);
+      setIconPickerOpen(false);
+      clearSetting('icon');
+      await onIconChanged();
+    });
+  };
+
   if (settings === undefined) {
     return (
       <div className="instance-settings-page instance-settings-panel">
@@ -1862,29 +1957,31 @@ function InstanceSettingsPanel({
           <div className="settings-row">
             <div className="settings-row-label">
               <span>游戏图标</span>
-              <span className="settings-row-subtitle">为当前实例指定自定义图标</span>
+              <span className="settings-row-subtitle">
+                {iconData !== undefined
+                  ? '当前使用自定义图片'
+                  : (settings.icon !== undefined
+                      ? `当前使用内置图标 ${settings.icon}`
+                      : '未设置时按加载器和游戏版本自动选择')}
+              </span>
             </div>
             <div className="settings-row-control instance-icon-control">
-              {iconData !== undefined ? (
-                <img className="instance-icon-preview" src={iconData} alt="实例图标" />
-              ) : (
-                <span className="instance-icon-none">未设置</span>
-              )}
-              <button
-                className="border-button"
-                onClick={() => {
-                  void hmcl().pickInstanceIcon(instanceId).then((data) => {
-                    if (data !== undefined) setIconData(data);
-                  });
-                }}
-              >
+              <img
+                className="instance-icon-preview"
+                src={iconData ?? instanceIconAsset(derivedIcon)}
+                alt="实例图标"
+              />
+              <button className="border-button" onClick={() => setIconPickerOpen(true)}>
                 设置图标
               </button>
-              {iconData !== undefined && (
+              {(iconData !== undefined || settings.icon !== undefined) && (
                 <button
                   className="border-button"
                   onClick={() => {
-                    void hmcl().clearInstanceIcon(instanceId).then(() => setIconData(undefined));
+                    forgetInstanceIcon(instanceId);
+                    setIconData(undefined);
+                    void hmcl().clearInstanceIcon(instanceId).then(onIconChanged);
+                    clearSetting('icon');
                   }}
                 >
                   清除
@@ -2506,6 +2603,14 @@ function InstanceSettingsPanel({
           </div>
         </div>
       </div>
+      {iconPickerOpen && (
+        <InstanceIconPickerSheet
+          current={iconData !== undefined ? undefined : settings.icon}
+          onPickType={chooseIconType}
+          onPickFile={chooseIconFile}
+          onClose={() => setIconPickerOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -2759,7 +2864,14 @@ function InstanceManagePage({ state }: StateHookProps): React.JSX.Element {
         </aside>
         <main className="dl-main instance-manage-main">
           <div className="instance-tab-stage" key={tab}>
-            {tab === 'settings' && <InstanceSettingsPanel instanceId={instanceId} key={instanceId} />}
+            {tab === 'settings' && (
+              <InstanceSettingsPanel
+                instanceId={instanceId}
+                derivedIcon={state.installed.find((entry) => entry.id === instanceId)?.icon}
+                onIconChanged={state.refreshInstalled}
+                key={instanceId}
+              />
+            )}
             {tab === 'installers' && <InstallersTab state={state} instanceId={instanceId} key={instanceId} />}
             {tab === 'mods' && (
               <FolderListTab instanceId={instanceId} folder="mods" title="模组管理" subtitle=".jar / .disabled 文件" />
@@ -3190,6 +3302,36 @@ const VERSION_ICONS: Record<VersionKind, string> = {
   april_fools: 'img/april_fools@2x.png',
   old: 'img/craft_table@2x.png'
 };
+
+/**
+ * The built-in instance icons, in `GameInstanceIconDialog`'s order.
+ *
+ * The ids are the contract: @hmcl/core hands the instance list an id back and
+ * writes the one the user picked into the instance settings, so they have to
+ * match `INSTANCE_ICON_TYPES` there. The assets are renderer-owned, like
+ * `VERSION_ICONS` above — they are the `@2x` variants of HMCL's own artwork,
+ * which keeps a 32px icon sharp on a HiDPI display.
+ */
+const INSTANCE_ICONS: ReadonlyArray<{ id: string; asset: string }> = [
+  { id: 'GRASS', asset: 'img/grass@2x.png' },
+  { id: 'CHEST', asset: 'img/chest@2x.png' },
+  { id: 'CHICKEN', asset: 'img/chicken@2x.png' },
+  { id: 'COMMAND', asset: 'img/command@2x.png' },
+  { id: 'APRIL_FOOLS', asset: 'img/april_fools@2x.png' },
+  { id: 'OPTIFINE', asset: 'img/optifine@2x.png' },
+  { id: 'CRAFT_TABLE', asset: 'img/craft_table@2x.png' },
+  { id: 'FABRIC', asset: 'img/fabric@2x.png' },
+  { id: 'LEGACY_FABRIC', asset: 'img/legacyfabric@2x.png' },
+  { id: 'FORGE', asset: 'img/forge@2x.png' },
+  { id: 'CLEANROOM', asset: 'img/cleanroom@2x.png' },
+  { id: 'NEO_FORGE', asset: 'img/neoforge@2x.png' },
+  { id: 'FURNACE', asset: 'img/furnace@2x.png' },
+  { id: 'QUILT', asset: 'img/quilt@2x.png' }
+];
+
+function instanceIconAsset(id: string | undefined): string {
+  return INSTANCE_ICONS.find((entry) => entry.id === id)?.asset ?? 'img/grass@2x.png';
+}
 
 // Ported from GameVersionNumber#isAprilFools plus the known special ids.
 const KNOWN_APRIL_FOOLS = new Set([
@@ -5752,6 +5894,60 @@ function ModpackExportSheet({
           </button>
           <button className="text-button" onClick={onClose} disabled={busy}>
             取消
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The icon chooser behind the instance settings' 游戏图标 row, mirroring
+ * `GameInstanceIconDialog`: a flow of the built-in icons plus a tile that opens
+ * a file chooser. No labels there either — the pictures are the labels, and a
+ * caption under each one would only crowd a 36px tile.
+ */
+function InstanceIconPickerSheet({
+  current,
+  onPickType,
+  onPickFile,
+  onClose
+}: {
+  /** The picked icon id, when the instance has one. */
+  current: string | undefined;
+  onPickType: (id: string) => void;
+  onPickFile: () => void;
+  onClose: () => void;
+}): React.JSX.Element {
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div className="sheet icon-picker-sheet" onClick={(event) => event.stopPropagation()}>
+        <h3 className="sheet-title">游戏图标</h3>
+        <div className="sheet-body icon-picker-grid">
+          <button
+            className={`icon-picker-tile custom${current === undefined ? ' selected' : ''}`}
+            title="从文件选择"
+            aria-label="从文件选择"
+            onClick={onPickFile}
+          >
+            <AddIcon size={22} />
+          </button>
+          {INSTANCE_ICONS.map((entry) => (
+            <button
+              key={entry.id}
+              className={`icon-picker-tile${current === entry.id ? ' selected' : ''}`}
+              title={entry.id}
+              aria-label={entry.id}
+              aria-pressed={current === entry.id}
+              onClick={() => onPickType(entry.id)}
+            >
+              <img src={entry.asset} alt="" />
+            </button>
+          ))}
+        </div>
+        <div className="sheet-actions">
+          <button className="text-button" onClick={onClose}>
+            关闭
           </button>
         </div>
       </div>
