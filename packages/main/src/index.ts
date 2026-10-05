@@ -50,7 +50,6 @@ import {
   readPackMetadata,
   requiredResourceFormat,
   renderLaunchScript,
-  resolveGameDir,
   resolveLoaderComponents,
   rootGameVersion,
   scriptFlavour,
@@ -1091,15 +1090,6 @@ handle('modpack:export', async (instanceId: string, info: ModpackExportInfoDto) 
   return { path: result.filePath, files: exported.files, bytes: exported.bytes };
 });
 
-/**
- * The `--gameDir` a launch of this instance would use: the launcher's own
- * game directory, overlaid with whatever the instance settings say.
- */
-async function resolveLaunchGameDir(repo: GameRepository, instanceId: string): Promise<string> {
-  const settings = await readInstanceSettings(repo, instanceId);
-  return settings.gameDirType === 'instance' ? repo.versionRoot(instanceId) : state.settings.gameDir;
-}
-
 function blankToUndefined(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed === undefined || trimmed === '' ? undefined : trimmed;
@@ -1426,18 +1416,31 @@ handle('instance-settings:set', async (id: string, settings: InstanceSettingsDto
 // ============ Instance folder & icon management ============
 
 /**
- * Resolves a folder inside the instance's game directory. It has to go through
- * `resolveGameDir` rather than assuming the version root: a global instance
- * keeps its mods and resource packs in the shared repository root, so hardcoding
- * the version root listed (and deleted, and opened) a directory the installer
- * never writes to.
+ * The `--gameDir` a launch of this instance would use: the launcher's own
+ * game directory, overlaid with whatever the instance settings say.
+ */
+async function resolveLaunchGameDir(repo: GameRepository, instanceId: string): Promise<string> {
+  const settings = await readInstanceSettings(repo, instanceId);
+  return settings.gameDirType === 'instance' ? repo.versionRoot(instanceId) : state.settings.gameDir;
+}
+
+/**
+ * Resolves a folder inside the instance's run directory, which is what HMCL
+ * means by `gameInstance.getRunDirectory()`.
+ *
+ * It cannot be the version root: a non-isolated instance keeps its mods and
+ * resource packs in the shared game directory, so hardcoding the version root
+ * would list (and delete, and open) a folder the installer never writes to.
+ * `resolveGameDir` gets the isolation right but ignores the global game
+ * directory setting, so a custom game directory left every instance page
+ * pointing at a folder no launch uses.
  */
 async function instanceFolderPath(
   repo: GameRepository,
   instanceId: string,
   folder: string
 ): Promise<string> {
-  const gameDir = await resolveGameDir(repo, instanceId);
+  const gameDir = await resolveLaunchGameDir(repo, instanceId);
   return folder === '' ? gameDir : join(gameDir, folder);
 }
 
@@ -1446,7 +1449,7 @@ handle(
   async (instanceId: string, folder: string): Promise<InstanceFolderEntryDto[]> => {
     const repo = state.repository();
     await assertInstanceExists(repo, instanceId);
-    const gameDir = await resolveGameDir(repo, instanceId);
+    const gameDir = await resolveLaunchGameDir(repo, instanceId);
     const entries = await readdir(folder === '' ? gameDir : join(gameDir, folder), {
       withFileTypes: true
     }).catch(() => [] as import('node:fs').Dirent[]);
@@ -1491,7 +1494,7 @@ handle(
   async (instanceId: string, name: string, enabled: boolean): Promise<void> => {
     const repo = state.repository();
     await assertInstanceExists(repo, instanceId);
-    const gameDir = await resolveGameDir(repo, instanceId);
+    const gameDir = await resolveLaunchGameDir(repo, instanceId);
     const options = await readGameOptions(gameDir);
     const manifests = new Map(
       (await repo.listInstalledVersions()).map((version) => [version.id, version.manifest])

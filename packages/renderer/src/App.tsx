@@ -1480,7 +1480,7 @@ function InstancesPage({
   const launchTest = async (id: string): Promise<void> => {
     if (state.busy) return;
     state.setBusy(true);
-    state.appendLog({ text: `>>> 测试启动 ${id}`, isError: false });
+    state.appendLog({ text: `>>> 测试游戏 ${id}`, isError: false });
     try {
       await hmcl().launch(id);
     } catch (e) {
@@ -1497,6 +1497,19 @@ function InstancesPage({
       }
     } catch (e) {
       state.appendLog({ text: `生成启动脚本失败: ${String(e)}`, isError: true });
+    }
+  };
+
+  /**
+   * Opens the folder the game would run in, which is what HMCL's
+   * `Instances.openFolder` does. For a non-isolated instance that is the shared
+   * game directory, not its own version folder.
+   */
+  const openRunFolder = async (id: string): Promise<void> => {
+    try {
+      await hmcl().openInstanceFolder(id, '');
+    } catch (e) {
+      state.appendLog({ text: `打开实例运行文件夹失败: ${String(e)}`, isError: true });
     }
   };
 
@@ -1592,8 +1605,8 @@ function InstancesPage({
             <div className="instance-actions">
               <button
                 className="icon-button"
-                title="测试启动"
-                aria-label="测试启动"
+                title="测试游戏"
+                aria-label="测试游戏"
                 disabled={state.busy}
                 onClick={(e) => { e.stopPropagation(); void launchTest(version.id); }}
               >
@@ -1617,7 +1630,7 @@ function InstancesPage({
                       onClick={() => { setMenuFor(undefined); void launchTest(version.id); }}
                     >
                       <RocketIcon size={17} />
-                      测试启动
+                      测试游戏
                     </button>
                   </li>
                   <li>
@@ -1632,7 +1645,7 @@ function InstancesPage({
                   <li>
                     <button onClick={() => { setMenuFor(undefined); openSettings(version.id); }}>
                       <SettingsIcon size={17} />
-                      管理
+                      实例管理
                     </button>
                   </li>
                   <li className="separator" />
@@ -1645,7 +1658,7 @@ function InstancesPage({
                       }}
                     >
                       <EditIcon size={17} />
-                      重命名
+                      重命名该实例
                     </button>
                   </li>
                   <li>
@@ -1653,7 +1666,7 @@ function InstancesPage({
                       onClick={() => { setMenuFor(undefined); void copyInstance(version.id); }}
                     >
                       <ContentCopyIcon size={17} />
-                      复制
+                      复制游戏实例
                     </button>
                   </li>
                   <li>
@@ -1662,13 +1675,20 @@ function InstancesPage({
                       onClick={() => { setMenuFor(undefined); setDeleteTarget(version.id); }}
                     >
                       <DeleteForeverIcon size={17} />
-                      删除
+                      删除该实例
                     </button>
                   </li>
                   <li>
                     <button onClick={() => { setMenuFor(undefined); setExportTarget(version.id); }}>
                       <PackageIcon size={17} />
                       导出整合包
+                    </button>
+                  </li>
+                  <li className="separator" />
+                  <li>
+                    <button onClick={() => { setMenuFor(undefined); void openRunFolder(version.id); }}>
+                      <FolderOpenIcon size={17} />
+                      实例运行文件夹
                     </button>
                   </li>
                 </ul>
