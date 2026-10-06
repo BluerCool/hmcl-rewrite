@@ -252,6 +252,21 @@ export interface LoaderVersionDto {
   stable: boolean;
 }
 
+/**
+ * Bounds for 下载 → 下载线程数 → 自定义线程数, matching HMCL's slider
+ * (`new JFXSlider(1, 256, 64)`).
+ */
+export const MIN_DOWNLOAD_THREADS = 1;
+export const MAX_DOWNLOAD_THREADS = 256;
+/** Where HMCL's slider starts; also what 自定义线程数 falls back to. */
+export const DEFAULT_DOWNLOAD_THREADS = 64;
+
+/**
+ * Where downloads are fetched from: HMCL's `DownloadSource` without `DEFAULT`,
+ * which picks the fastest source by probing. Ours are named for the host.
+ */
+export type DownloadSource = 'mojang' | 'bmclapi';
+
 /** Launcher settings persisted by the main process. */
 export interface SettingsDto {
   playerName: string;
@@ -262,7 +277,14 @@ export interface SettingsDto {
   javaExecutable: string | undefined;
   javaArgs: string | undefined;
   gameDirType: 'global' | 'instance' | undefined;
-  downloadMirror: 'mojang' | 'bmclapi';
+  /** HMCL 版本列表源: where manifests are fetched from. */
+  downloadMirror: DownloadSource;
+  /**
+   * HMCL 文件下载源: where the actual files come from. Absent means it follows
+   * {@link downloadMirror}, which is what every build before this setting
+   * existed assumed.
+   */
+  fileDownloadSource: DownloadSource | undefined;
   /** Mirror serving Modrinth file downloads (fallback after the CDN). */
   modrinthMirrorRoot: string | undefined;
   /** Currently selected account id. */
@@ -301,20 +323,14 @@ export interface SettingsDto {
   /** The most recently launched game instance id; preferred on startup. */
   lastLaunchedId: string | undefined;
   /** Download settings */
-  fileDownloadSource: 'mojang' | 'bmclapi' | undefined;
-  defaultAddonSource: 'modrinth' | 'curseforge' | undefined;
+  /**
+   * HMCL 文件下载缓存文件夹 → 自定义: where versions, libraries and assets live.
+   * Absent means 默认, i.e. the game directory itself.
+   */
   commonDirectory: string | undefined;
   commonDirectoryType: 'default' | 'custom' | undefined;
   autoDownloadThreads: boolean | undefined;
   downloadThreads: number | undefined;
-  /** Proxy settings */
-  useProxy: boolean | undefined;
-  proxyHost: string | undefined;
-  proxyPort: number | undefined;
-  proxyType: 'http' | 'socks5' | undefined;
-  proxyAuth: boolean | undefined;
-  proxyUsername: string | undefined;
-  proxyPassword: string | undefined;
   /** UI language */
   language: string | undefined;
   /** Rows kept in the log drawer, mirroring HMCL's `logLines` setting. */
@@ -535,6 +551,8 @@ export interface HmclApi {
   detectJava(): Promise<JavaRuntimeDto[]>;
   /** Opens a file dialog to pick a java executable; undefined when cancelled. */
   pickJavaExecutable(): Promise<string | undefined>;
+  /** Picks a directory for a settings row that takes a path (HMCL 选择文件夹). */
+  pickDirectory(title: string): Promise<string | undefined>;
   /** Total physical memory in MiB, used by the memory status bar. */
   getSystemMemory(): Promise<number>;
   getSettings(): Promise<SettingsDto>;

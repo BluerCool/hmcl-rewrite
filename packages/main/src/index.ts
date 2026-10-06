@@ -10,16 +10,15 @@ import { inflateRawSync } from 'node:zlib';
 import { totalmem } from 'node:os';
 import {
   AccountStore,
-  BmclapiDownloadProvider,
   CURRENT_OS,
   Downloader,
   GameRepository,
   Launcher,
-  MojangDownloadProvider,
   applyInstanceSettings,
   buildLaunchCommand,
   chainManifests,
   cleanNativesDirectory,
+  createDownloadProvider,
   createOfflineProfile,
   deriveInstanceIcon,
   detectJavaRuntimes,
@@ -75,19 +74,21 @@ import {
   type RunningGame
 } from '@hmcl/core';
 import { LogWindowController, type OutputRow } from './log-window.js';
-import type {
-  AccountDto,
-  AddonSubdir,
-  InstanceFolderEntryDto,
-  InstanceSettingsDto,
-  LoaderKind,
-  ModpackExportInfoDto,
-  ModpackInspectDto,
-  ModrinthCategoryDto,
-  ModrinthSearchIndex,
-  ModrinthProjectDto,
-  ModrinthVersionDto,
-  SettingsDto
+import {
+  MAX_DOWNLOAD_THREADS,
+  MIN_DOWNLOAD_THREADS,
+  type AccountDto,
+  type AddonSubdir,
+  type InstanceFolderEntryDto,
+  type InstanceSettingsDto,
+  type LoaderKind,
+  type ModpackExportInfoDto,
+  type ModpackInspectDto,
+  type ModrinthCategoryDto,
+  type ModrinthSearchIndex,
+  type ModrinthProjectDto,
+  type ModrinthVersionDto,
+  type SettingsDto
 } from '@hmcl/shared';
 
 // Linux needs this switch so the compositor can composite an ARGB window.
@@ -119,18 +120,10 @@ const DEFAULT_SETTINGS: SettingsDto = {
   selectedInstanceId: undefined as string | undefined,
   lastLaunchedId: undefined as string | undefined,
   fileDownloadSource: undefined,
-  defaultAddonSource: undefined,
   commonDirectory: undefined,
   commonDirectoryType: undefined,
   autoDownloadThreads: undefined,
   downloadThreads: undefined,
-  useProxy: undefined,
-  proxyHost: undefined,
-  proxyPort: undefined,
-  proxyType: undefined,
-  proxyAuth: undefined,
-  proxyUsername: undefined,
-  proxyPassword: undefined,
   language: undefined,
   logLines: undefined
 };
@@ -181,15 +174,46 @@ class AppState {
     return this.settings;
   }
 
+  /**
+   * Where versions, libraries and assets live.
+   *
+   * HMCL calls this the common directory: 默认 keeps it at the game directory,
+   * and 自定义 (文件下载缓存文件夹) moves it elsewhere so downloads stop landing
+   * next to the game. Built fresh on every call, so changing the setting takes
+   * effect for the next operation without a restart.
+   */
   repository(): GameRepository {
-    return new GameRepository(this.settings.gameDir);
+    const common = this.settings.commonDirectory;
+    return new GameRepository(
+      common === undefined || common === '' ? this.settings.gameDir : common
+    );
+  }
+
+  /**
+   * The 自定义线程数 override, or undefined for 自动选择线程数.
+   *
+   * Handed to the provider constructor rather than to each `new Downloader`, so
+   * every path that takes a provider — assets, Modrinth, modpacks — picks it up
+   * without a change at the call site. 自动选择线程数 leaves the provider's own
+   * default alone: twice the core count for the mirror, a fixed 6 for the
+   * official source.
+   */
+  customDownloadThreads(): number | undefined {
+    if (this.settings.autoDownloadThreads !== false) return undefined;
+    const custom = this.settings.downloadThreads;
+    if (custom === undefined || Number.isNaN(custom)) return undefined;
+    return Math.min(MAX_DOWNLOAD_THREADS, Math.max(MIN_DOWNLOAD_THREADS, Math.trunc(custom)));
   }
 
   provider(): DownloadProvider {
-    if (this.settings.downloadMirror === 'bmclapi') {
-      return new BmclapiDownloadProvider(undefined, this.settings.modrinthMirrorRoot);
-    }
-    return new MojangDownloadProvider();
+    return createDownloadProvider({
+      versionListSource: this.settings.downloadMirror,
+      // Absent means the version list source does double duty, which is what a
+      // build from before 文件下载源 existed assumes.
+      fileDownloadSource: this.settings.fileDownloadSource ?? this.settings.downloadMirror,
+      modrinthMirrorRoot: this.settings.modrinthMirrorRoot,
+      concurrency: this.customDownloadThreads()
+    });
   }
 
   /** Resolves the account used for launching (selected account or offline). */
@@ -333,9 +357,13 @@ handle('versions:remote', async () => {
 handle('versions:install', async (id: string) => {
   const launchId = -1;
   try {
+    const provider = state.provider();
+    // The manifest is fetched straight from `provider`, outside the Downloader,
+    // so this is the only place 版本列表源 becomes visible in the log.
+    reportHosts(launchId, [provider.versionManifestUrl]);
     await installVanillaVersion(
       state.repository(),
-      state.provider(),
+      provider,
       String(id),
       (progress) => broadcast({ kind: 'download-progress', launchId, progress }),
       (stage) => broadcast({ kind: 'stage', launchId, stage })
@@ -833,6 +861,27 @@ function broadcastInstallProgress(progress: unknown): void {
   broadcast({ kind: 'download-progress', launchId: -1, progress });
 }
 
+/**
+ * Logs the hosts a download actually reaches, so it is visible which source a
+ * transfer went through. 下载源 splits 版本列表源 from 文件下载源, and a single
+ * install can legitimately touch the manifest host, a maven host and a Modrinth
+ * CDN at once, so these are reported as a set rather than a single verdict.
+ */
+function reportHosts(launchId: number, urls: readonly string[]): void {
+  for (const url of urls) {
+    try {
+      logWindow.publish(launchId, `>>> 下载源 ${new URL(url).host}`, false);
+    } catch {
+      // A URL without a host is not worth a log line.
+    }
+  }
+}
+
+/** `onHost` for a Downloader built in this file, wired to the log window. */
+function hostLogger(launchId: number): (host: string) => void {
+  return (host) => logWindow.publish(launchId, `>>> 下载源 ${host}`, false);
+}
+
 handle('modrinth:search', async (
   type: ModrinthProjectType,
   query: string | undefined,
@@ -899,7 +948,11 @@ handle('addon:save-file', async (url: string, filename: string) => {
     defaultPath: join(app.getPath('downloads'), basename(String(filename)))
   });
   if (result.canceled || result.filePath === undefined) return false;
-  await new Downloader({ concurrency: provider.concurrency, onProgress: broadcastInstallProgress })
+  await new Downloader({
+    concurrency: provider.concurrency,
+    onProgress: broadcastInstallProgress,
+    onHost: hostLogger(-1)
+  })
     .downloadAll([
       {
         url: String(url),
@@ -976,6 +1029,18 @@ handle('modpack:pick', async () => {
   return result.canceled ? undefined : result.filePaths[0];
 });
 
+/**
+ * Picks a directory, for the settings rows that take a path rather than a
+ * single file (HMCL 文件下载缓存文件夹 → 自定义).
+ */
+handle('settings:pick-directory', async (title: string) => {
+  const result = await dialog.showOpenDialog({
+    title: title === '' ? '选择文件夹' : title,
+    properties: ['openDirectory', 'createDirectory']
+  });
+  return result.canceled ? undefined : result.filePaths[0];
+});
+
 handle('modpack:inspect', async (path: string) => {
   const buffer = await readFile(String(path));
   const indexEntry = readZipEntry(buffer, 'modrinth.index.json');
@@ -1046,8 +1111,10 @@ handle('modpack:install-modrinth', async (projectId: string, versionId: string, 
     // Wrap download with a 30-minute timeout to prevent indefinite stalls
     const downloadTimeoutMs = 30 * 60 * 1000;
     await Promise.race([
-      new Downloader({ concurrency: provider.concurrency, onProgress: (p) =>
-        broadcast({ kind: 'download-progress', launchId, progress: p })
+      new Downloader({
+        concurrency: provider.concurrency,
+        onProgress: (p) => broadcast({ kind: 'download-progress', launchId, progress: p }),
+        onHost: hostLogger(launchId)
       })
         .downloadAll([
           {

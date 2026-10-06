@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  DEFAULT_DOWNLOAD_THREADS,
+  MAX_DOWNLOAD_THREADS,
+  MIN_DOWNLOAD_THREADS
+} from '@hmcl/shared';
 import type {
   AccountDto,
   DownloadProgressDto,
+  DownloadSource,
   InstalledVersionDto,
   InstanceFolder,
   InstanceFolderEntryDto,
@@ -6061,6 +6067,27 @@ function SettingsChoice({
   );
 }
 
+/**
+ * 下载源's option list. HMCL's `LineSelectButton` puts a description under each
+ * option, which a native <select> cannot, so the wording carries the two that
+ * distinguish the sources: the mirror is recommended in mainland China, the
+ * official one is preferred where Mojang is reachable.
+ */
+function DownloadSourceSelect({
+  value,
+  onChange
+}: {
+  value: DownloadSource;
+  onChange: (source: DownloadSource) => void;
+}): React.JSX.Element {
+  return (
+    <select value={value} onChange={(event) => onChange(event.target.value as DownloadSource)}>
+      <option value="mojang">尽量使用官方源（优先从官方源获取信息）</option>
+      <option value="bmclapi">尽量使用镜像源（推荐中国大陆用户使用）</option>
+    </select>
+  );
+}
+
 /** Page header shown on top of each settings tab: title plus a short hint. */
 function SettingsTabHeader({ title, subtitle }: { title: string; subtitle: string }): React.JSX.Element {
   return (
@@ -6410,137 +6437,105 @@ function AppearanceSettingsTab({ state }: StateHookProps): React.JSX.Element {
 function DownloadSettingsTab({ state }: StateHookProps): React.JSX.Element {
   const save = makeSettingsSave(state);
   const autoThreads = state.settings.autoDownloadThreads !== false;
+  const threads = state.settings.downloadThreads ?? DEFAULT_DOWNLOAD_THREADS;
+  // HMCL resolves the common directory the same way: the custom path only wins
+  // while 自定义 is the selected option, otherwise the game directory does.
+  const customCommon = state.settings.commonDirectoryType === 'custom';
+  const commonDirectory =
+    customCommon && state.settings.commonDirectory !== undefined && state.settings.commonDirectory !== ''
+      ? state.settings.commonDirectory
+      : state.settings.gameDir;
+
+  const pickCommonDirectory = async (): Promise<void> => {
+    try {
+      const path = await hmcl().pickDirectory('选择文件下载缓存文件夹');
+      if (path !== undefined) save({ commonDirectory: path, commonDirectoryType: 'custom' });
+    } catch (error) {
+      state.appendLog({ text: `选择缓存文件夹失败: ${String(error)}`, isError: true });
+    }
+  };
 
   return (
     <div className="settings-scroll">
-      <SettingsTabHeader title="下载" subtitle="下载源、缓存目录与代理设置。" />
+      <SettingsTabHeader title="下载" subtitle="下载源、缓存文件夹与线程数。" />
 
       <SettingsSection title="下载源">
-        <SettingsRow title="版本列表源">
-          <select
+        {/* HMCL's third option 自动选择下载源 probes for the fastest source,
+            which we do not do, so it is left out rather than drawn dead. */}
+        <SettingsRow title="版本列表源" subtitle="版本列表从哪个源获取">
+          <DownloadSourceSelect
             value={state.settings.downloadMirror}
-            onChange={(event) =>
-              save({ downloadMirror: event.target.value as SettingsDto['downloadMirror'] })
-            }
-          >
-            <option value="bmclapi">BMCLAPI（国内推荐）</option>
-            <option value="mojang">Mojang 官方源</option>
-          </select>
+            onChange={(source) => save({ downloadMirror: source })}
+          />
         </SettingsRow>
-        <SettingsRow title="文件下载源">
-          <select
-            value={state.settings.fileDownloadSource ?? 'bmclapi'}
-            onChange={(event) =>
-              save({ fileDownloadSource: event.target.value as SettingsDto['fileDownloadSource'] })
-            }
-          >
-            <option value="bmclapi">BMCLAPI（国内推荐）</option>
-            <option value="mojang">Mojang 官方源</option>
-          </select>
-        </SettingsRow>
-        <SettingsRow title="默认附加组件源" subtitle="安装模组、资源包与光影时的默认来源">
-          <select
-            value={state.settings.defaultAddonSource ?? 'modrinth'}
-            onChange={(event) =>
-              save({ defaultAddonSource: event.target.value as SettingsDto['defaultAddonSource'] })
-            }
-          >
-            <option value="modrinth">Modrinth</option>
-            <option value="curseforge">CurseForge</option>
-          </select>
+        <SettingsRow title="文件下载源" subtitle="游戏文件从哪个源下载">
+          <DownloadSourceSelect
+            value={state.settings.fileDownloadSource ?? state.settings.downloadMirror}
+            onChange={(source) => save({ fileDownloadSource: source })}
+          />
         </SettingsRow>
       </SettingsSection>
 
-      <SettingsSection title="下载线程">
-        <SettingsRow
-          title="自动"
-          subtitle="按系统核心数自动决定"
-          check={autoThreads}
-          onCheckChange={() => save({ autoDownloadThreads: true })}
+      {/* HMCL 清理缓存 deletes <common>/cache, which only exists because HMCL
+          stages downloads there; ours write straight to their targets, so there is
+          nothing to clean and the button is left out. */}
+      <SettingsSection title="下载">
+        <SettingsChoice
+          title="默认"
+          subtitle="与游戏目录相同"
+          name="common-directory"
+          value="default"
+          checked={!customCommon}
+          onSelect={() => save({ commonDirectory: undefined, commonDirectoryType: undefined })}
         />
-        <SettingsRow
+        <SettingsChoice
           title="自定义"
-          subtitle={`${state.settings.downloadThreads ?? 64} 个线程`}
-          check={!autoThreads}
-          onCheckChange={() => save({ autoDownloadThreads: false })}
+          subtitle={customCommon ? commonDirectory : '启用此选项，自定义文件下载缓存文件夹'}
+          name="common-directory"
+          value="custom"
+          checked={customCommon}
+          onSelect={() => void pickCommonDirectory()}
+        >
+          {customCommon && (
+            <button className="border-button" onClick={() => void pickCommonDirectory()}>
+              选择…
+            </button>
+          )}
+        </SettingsChoice>
+        <SettingsChoice
+          title="自动选择线程数"
+          name="download-threads"
+          value="auto"
+          checked={autoThreads}
+          onSelect={() => save({ autoDownloadThreads: true })}
+        />
+        <SettingsChoice
+          title="自定义线程数"
+          name="download-threads"
+          value="custom"
+          checked={!autoThreads}
+          onSelect={() => save({ autoDownloadThreads: false, downloadThreads: threads })}
         >
           {!autoThreads && (
-            <input
-              type="range"
-              min={1}
-              max={256}
-              value={state.settings.downloadThreads ?? 64}
-              onChange={(event) => save({ downloadThreads: Number(event.target.value) })}
-            />
-          )}
-        </SettingsRow>
-      </SettingsSection>
-
-      <SettingsSection title="缓存目录">
-        <SettingsRow title="缓存目录" subtitle="存放下载的版本与库文件">
-          <code className="settings-row-value">
-            {state.settings.commonDirectory ?? state.settings.gameDir}
-          </code>
-        </SettingsRow>
-      </SettingsSection>
-
-      <SettingsSection title="代理">
-        <SettingsRow
-          title="使用代理"
-          check={state.settings.useProxy ?? false}
-          onCheckChange={(checked) => save({ useProxy: enabled(checked) })}
-        />
-        {state.settings.useProxy === true && (
-          <>
-            <SettingsRow title="类型">
-              <select
-                value={state.settings.proxyType ?? 'http'}
-                onChange={(event) => save({ proxyType: event.target.value as SettingsDto['proxyType'] })}
-              >
-                <option value="http">HTTP</option>
-                <option value="socks5">SOCKS5</option>
-              </select>
-            </SettingsRow>
-            <SettingsRow title="地址">
+            <>
               <input
-                value={state.settings.proxyHost ?? ''}
-                placeholder="127.0.0.1"
-                onChange={(event) => save({ proxyHost: event.target.value })}
+                type="range"
+                min={MIN_DOWNLOAD_THREADS}
+                max={MAX_DOWNLOAD_THREADS}
+                value={threads}
+                onChange={(event) => save({ downloadThreads: Number(event.target.value) })}
               />
-              <span className="settings-row-separator">:</span>
               <input
                 type="number"
                 className="settings-row-port"
-                value={state.settings.proxyPort ?? 7890}
-                min={1}
-                max={65535}
-                onChange={(event) => save({ proxyPort: Number(event.target.value) })}
+                value={threads}
+                min={MIN_DOWNLOAD_THREADS}
+                max={MAX_DOWNLOAD_THREADS}
+                onChange={(event) => save({ downloadThreads: Number(event.target.value) })}
               />
-            </SettingsRow>
-            <SettingsRow
-              title="需要认证"
-              check={state.settings.proxyAuth ?? false}
-              onCheckChange={(checked) => save({ proxyAuth: enabled(checked) })}
-            />
-            {state.settings.proxyAuth === true && (
-              <>
-                <SettingsRow title="用户名">
-                  <input
-                    value={state.settings.proxyUsername ?? ''}
-                    onChange={(event) => save({ proxyUsername: event.target.value })}
-                  />
-                </SettingsRow>
-                <SettingsRow title="密码">
-                  <input
-                    type="password"
-                    value={state.settings.proxyPassword ?? ''}
-                    onChange={(event) => save({ proxyPassword: event.target.value })}
-                  />
-                </SettingsRow>
-              </>
-            )}
-          </>
-        )}
+            </>
+          )}
+        </SettingsChoice>
       </SettingsSection>
     </div>
   );

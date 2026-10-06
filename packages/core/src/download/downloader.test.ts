@@ -177,6 +177,45 @@ describe('Downloader progress reporting', () => {
     }
   });
 
+  it('reports each distinct host once, in the order first reached', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'hmcl-dl-'));
+    try {
+      const hosts: string[] = [];
+      // Two files from the same host must not be announced twice, and a third
+      // from another host must be — the point of the report is which sources a
+      // single batch touched.
+      await new Downloader({
+        concurrency: 1,
+        onHost: (host) => hosts.push(host)
+      }).downloadAll([
+        { url: `${baseUrl}/fast`, destination: join(dir, 'a.bin') },
+        { url: `${baseUrl}/fast`, destination: join(dir, 'b.bin') },
+        { url: `${baseUrl}/slow`, destination: join(dir, 'c.bin') }
+      ]);
+      const host = new URL(baseUrl).host;
+      expect(hosts).toEqual([host]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a host it reached even when the file then fails', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'hmcl-dl-'));
+    try {
+      const hosts: string[] = [];
+      await expect(
+        new Downloader({ retries: 1, onHost: (host) => hosts.push(host) }).downloadAll([
+          { url: `${baseUrl}/missing`, destination: join(dir, 'missing.bin') }
+        ])
+      ).rejects.toBeInstanceOf(DownloadError);
+      // A host that was contacted and then failed is exactly what the log line
+      // exists to show, so it must not be suppressed.
+      expect(hosts).toEqual([new URL(baseUrl).host]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('recovers via a follow-up batch pass when a resource flakily fails', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'hmcl-dl-'));
     try {

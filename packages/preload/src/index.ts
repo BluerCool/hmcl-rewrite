@@ -14,6 +14,7 @@ const api: HmclApi = {
     ipcRenderer.invoke('loaders:install', kind, mcVersion, loaderId),
   detectJava: () => ipcRenderer.invoke('java:detect'),
   pickJavaExecutable: () => ipcRenderer.invoke('java:pick-executable'),
+  pickDirectory: (title) => ipcRenderer.invoke('settings:pick-directory', title),
   getSystemMemory: () => ipcRenderer.invoke('system:memory'),
   searchModrinthProjects: (payload) => ipcRenderer.invoke('modrinth:search', payload.type, payload.query, payload.gameVersion, payload.categories, payload.index, payload.offset, payload.limit),
   fetchModrinthCategories: (projectType) => ipcRenderer.invoke('modrinth:categories', projectType),

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { BmclapiDownloadProvider, MojangDownloadProvider } from './mirrors.js';
+import {
+  BMCLAPI_ROOT,
+  BmclapiDownloadProvider,
+  MOJANG_URLS,
+  MojangDownloadProvider,
+  createDownloadProvider
+} from './mirrors.js';
 
 describe('BmclapiDownloadProvider', () => {
   const provider = new BmclapiDownloadProvider();
@@ -71,5 +77,80 @@ describe('MojangDownloadProvider', () => {
     );
     expect(provider.altUrls('https://cdn.modrinth.com/data/x/y.jar')).toEqual([]);
     expect(provider.concurrency).toBe(6);
+  });
+});
+
+describe('createDownloadProvider', () => {
+  it('collapses to one source when both settings agree', () => {
+    const provider = createDownloadProvider({
+      versionListSource: 'bmclapi',
+      fileDownloadSource: 'bmclapi'
+    });
+    expect(provider.versionManifestUrl).toBe(
+      `${BMCLAPI_ROOT}/mc/game/version_manifest_v2.json`
+    );
+    expect(provider.assetBaseUrl).toBe(`${BMCLAPI_ROOT}/assets/`);
+  });
+
+  it('takes the manifest from the list source and files from the file source', () => {
+    const provider = createDownloadProvider({
+      versionListSource: 'bmclapi',
+      fileDownloadSource: 'mojang'
+    });
+    // The list came from the mirror…
+    expect(provider.versionManifestUrl).toBe(
+      `${BMCLAPI_ROOT}/mc/game/version_manifest_v2.json`
+    );
+    // …but the files did not, so nothing is rewritten and no fallback is offered.
+    expect(provider.assetBaseUrl).toBe(MOJANG_URLS.assetBase);
+    expect(provider.libraryBaseUrl).toBe(MOJANG_URLS.libraryBase);
+    const jar = 'https://piston-data.mojang.com/v1/objects/abc/client.jar';
+    expect(provider.injectUrl(jar)).toBe(jar);
+    expect(provider.altUrls(jar)).toEqual([]);
+    expect(provider.altUrls('https://cdn.modrinth.com/data/x/y.jar')).toEqual([]);
+  });
+
+  it('serves files from the mirror while the manifest stays official', () => {
+    const provider = createDownloadProvider({
+      versionListSource: 'mojang',
+      fileDownloadSource: 'bmclapi'
+    });
+    expect(provider.versionManifestUrl).toBe(MOJANG_URLS.versionManifest);
+    expect(provider.assetBaseUrl).toBe(`${BMCLAPI_ROOT}/assets/`);
+    expect(
+      provider.injectUrl('https://piston-data.mojang.com/v1/objects/abc/client.jar')
+    ).toBe(`${BMCLAPI_ROOT}/v1/objects/abc/client.jar`);
+  });
+
+  it('follows the file source for the concurrency limit', () => {
+    // Files come from Mojang here, whose fixed 6 must not be replaced by the
+    // mirror's core-count-derived default.
+    expect(
+      createDownloadProvider({ versionListSource: 'bmclapi', fileDownloadSource: 'mojang' })
+        .concurrency
+    ).toBe(6);
+  });
+
+  it('lets an explicit thread count override both sources', () => {
+    for (const fileDownloadSource of ['mojang', 'bmclapi'] as const) {
+      expect(
+        createDownloadProvider({
+          versionListSource: 'mojang',
+          fileDownloadSource,
+          concurrency: 32
+        }).concurrency
+      ).toBe(32);
+    }
+  });
+
+  it('passes a custom Modrinth mirror root through to the file source', () => {
+    const provider = createDownloadProvider({
+      versionListSource: 'mojang',
+      fileDownloadSource: 'bmclapi',
+      modrinthMirrorRoot: 'https://m.example.net'
+    });
+    expect(provider.altUrls('https://cdn.modrinth.com/data/x/y.jar')).toEqual([
+      'https://m.example.net/data/x/y.jar'
+    ]);
   });
 });

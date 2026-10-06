@@ -67,7 +67,14 @@ export interface DownloaderOptions {
   retries?: number | undefined;
   /** Progress callback invoked as the batch advances. */
   onProgress?: ((progress: DownloadProgress) => void) | undefined;
-/** Abort signal shared by all downloads in the batch. */
+  /**
+   * Called once per distinct host the batch actually contacts, in the order
+   * they are first reached. A version install can pull from the manifest host,
+   * the asset host and a Modrinth CDN at once, and with 版本列表源 and 文件下载源
+   * now separate those can differ, so this is how the routing is made visible.
+   */
+  onHost?: ((host: string) => void) | undefined;
+  /** Abort signal shared by all downloads in the batch. */
   readonly signal?: AbortSignal | undefined;
   /** Maximum wait for response headers before the attempt is aborted. */
   readonly headerTimeoutMs?: number | undefined;
@@ -95,10 +102,13 @@ export class Downloader {
   private readonly concurrency: number;
   private readonly retries: number;
   private readonly onProgress: ((progress: DownloadProgress) => void) | undefined;
+  private readonly onHost: ((host: string) => void) | undefined;
   private readonly signal: AbortSignal | undefined;
   private readonly headerTimeoutMs: number;
   private readonly idleTimeoutMs: number;
   private readonly batchPasses: number;
+  /** Hosts already reported to `onHost`, so each is announced only once. */
+  private readonly reportedHosts = new Set<string>();
 
   /** Cumulative bytes streamed across all files in the current batch. */
   private downloadedBytes = 0;
@@ -113,6 +123,7 @@ export class Downloader {
     this.concurrency = options.concurrency ?? 8;
     this.retries = options.retries ?? 6;
     this.onProgress = options.onProgress;
+    this.onHost = options.onHost;
     this.signal = options.signal;
     this.headerTimeoutMs = options.headerTimeoutMs ?? 40_000;
     this.idleTimeoutMs = options.idleTimeoutMs ?? 30_000;
@@ -229,6 +240,13 @@ export class Downloader {
     const candidates = [entry.url, ...(entry.altUrls ?? [])];
     let lastError: unknown = new DownloadError(`Failed to download ${entry.url}`, entry.url);
     for (const url of candidates) {
+      // Reported as each URL is tried rather than when it succeeds, so a host
+      // that was reached and then failed still shows up.
+      const host = hostOf(url);
+      if (host !== undefined && !this.reportedHosts.has(host)) {
+        this.reportedHosts.add(host);
+        this.onHost?.(host);
+      }
       for (let attempt = 1; attempt <= this.retries; attempt++) {
         try {
           await this.fetchToFile(entry, url, session, publish);
@@ -413,6 +431,15 @@ async function fileSize(path: string): Promise<number> {
 function fileNameOf(path: string): string {
   const index = path.lastIndexOf('/');
   return index >= 0 ? path.slice(index + 1) : path;
+}
+
+/** The host of a URL, or undefined when it has none (e.g. a bare path). */
+function hostOf(url: string): string | undefined {
+  try {
+    return new URL(url).host;
+  } catch {
+    return undefined;
+  }
 }
 
 function delay(ms: number): Promise<void> {
